@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Map View — Road Complaint System</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <link href="/static/css/design.css" rel="stylesheet" />
+  <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    .page-content { display: flex; flex-direction: column; height: 100%; }
+
+    /* ── Stats bar ─────────────────────────────────────── */
+    #statsBar {
+      background: rgba(15,23,42,0.88);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      padding: 8px 24px;
+      display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+      font-size: .8rem; flex-shrink: 0; z-index: 600;
+    }
+    .stat-item { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .stat-item .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+    /* ── Map fills rest of screen ──────────────────────── */
+    #mapWrap { flex: 1; position: relative; overflow: hidden; }
+    #map     { width: 100%; height: 100%; }
+
+    /* ── Floating panels ───────────────────────────────── */
+    .map-panel {
+      position: absolute; z-index: 900;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      background: rgba(15,23,42,0.88);
+      border: 1px solid rgba(255,255,255,0.13);
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    #filterPanel { top: 14px; right: 14px; width: 240px; padding: 16px; }
+    #filterPanel .fp-head { font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:12px; }
+    #filterPanel .glass-select,
+    #filterPanel .glass-input { font-size:.83rem; padding:8px 12px !important; margin-bottom: 8px; }
+
+    #legend { bottom: 30px; left: 14px; padding: 14px 16px; }
+    #legend .lg-title { font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px; }
+    .lg-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:.79rem; color:var(--text-primary); }
+    .lg-dot { width:12px; height:12px; border-radius:50%; border:2px solid rgba(255,255,255,.25); flex-shrink:0; }
+
+    /* ── Pin count badge ───────────────────────────────── */
+    #cntBadge {
+      position: absolute; top: 14px; left: 14px; z-index: 900;
+      background: rgba(15,23,42,.9); border: 1px solid rgba(255,255,255,.15);
+      border-radius: 999px; padding: 5px 14px; font-size:.8rem; color:var(--text-primary);
+      backdrop-filter: blur(10px); display: none;
+    }
+
+    /* ── Loading overlay on map ────────────────────────── */
+    #mapLoading {
+      position: absolute; inset: 0; z-index: 800;
+      background: rgba(15,23,42,.65); backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center;
+    }
+    #mapLoading.hidden { display: none; }
+    .spinner-ring {
+      width:44px;height:44px;border:3px solid rgba(255,255,255,.12);
+      border-top-color:var(--accent);border-radius:50%;
+      animation:spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* ── Full-page login overlay ───────────────────────── */
+    #overlay {
+      position: absolute; inset: 0; z-index: 950;
+      background: rgba(15,23,42,.92); backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+    }
+    #overlay.hidden { display: none; }
+    .ov-card { width: 100%; max-width: 390px; }
+
+    /* ── Leaflet popup dark theme ──────────────────────── */
+    .leaflet-popup-content-wrapper {
+      background: rgba(15,23,42,0.96) !important;
+      border: 1px solid rgba(255,255,255,0.15) !important;
+      border-radius: 16px !important;
+      color: #f1f5f9 !important;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.55) !important;
+      padding: 0 !important;
+    }
+    .leaflet-popup-content { margin: 0 !important; padding: 16px !important; min-width: 230px; }
+    .leaflet-popup-tip-container .leaflet-popup-tip { background: rgba(15,23,42,0.96) !important; }
+    .leaflet-popup-close-button { color: #94a3b8 !important; font-size: 18px !important; top: 8px !important; right: 10px !important; }
+
+    @media (max-width: 576px) {
+      #filterPanel { width: calc(100vw - 28px); }
+      #statsBar { gap: 12px; padding: 6px 14px; }
+    }
+  </style>
+</head>
+<body>
+<!-- Blobs (behind map, still visible on overlays) -->
+<div class="blob blob-1" style="z-index:-1;"></div>
+<div class="blob blob-2" style="z-index:-1;"></div>
+<div class="blob blob-3" style="z-index:-1;"></div>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-glass" style="flex-shrink:0;">
+  <div class="container-fluid px-4">
+    <a class="navbar-brand navbar-brand-custom" href="/index">
+      <i class="bi bi-cone-striped brand-icon"></i>Road Complaint System
+    </a>
+    <button class="navbar-toggler-custom" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
+      <i class="bi bi-list"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navMenu">
+      <ul class="navbar-nav ms-auto align-items-center gap-1">
+        <li class="nav-item"><a class="nav-link-custom" href="/index"><i class="bi bi-pencil-square"></i>File Complaint</a></li>
+        <li class="nav-item"><a class="nav-link-custom" href="/dashboard"><i class="bi bi-speedometer2"></i>Dashboard</a></li>
+        <li class="nav-item"><a class="nav-link-custom" href="/analytics"><i class="bi bi-bar-chart-line"></i>Analytics</a></li>
+        <li class="nav-item"><a class="nav-link-custom active" href="/map"><i class="bi bi-map"></i>Map</a></li>
+        <li class="nav-item ms-2" id="navUser"></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="page-content">
+
+  <!-- Stats bar -->
+  <div id="statsBar" style="display:none;">
+    <div class="stat-item"><div class="dot" style="background:#60a5fa;"></div>Total: <strong id="sTotal" style="color:var(--text-primary);">—</strong></div>
+    <div class="stat-item"><div class="dot" style="background:var(--danger);"></div>Open: <strong id="sOpen" style="color:var(--danger);">—</strong></div>
+    <div class="stat-item"><div class="dot" style="background:var(--warning);"></div>In Progress: <strong id="sProgress" style="color:var(--warning);">—</strong></div>
+    <div class="stat-item"><div class="dot" style="background:var(--success);"></div>Resolved: <strong id="sResolved" style="color:var(--success);">—</strong></div>
+    <div class="stat-item ms-auto"><i class="bi bi-geo-alt-fill me-1" style="color:var(--accent);"></i>Showing: <strong id="cntNum" style="color:var(--accent);">—</strong> pins</div>
+  </div>
+
+  <!-- Map wrapper -->
+  <div id="mapWrap">
+
+    <!-- Map -->
+    <div id="map"></div>
+
+    <!-- Pin count (top-left) -->
+    <div id="cntBadge"><i class="bi bi-geo-alt-fill me-1" style="color:var(--accent);"></i><span id="cntNum2">0</span> pins</div>
+
+    <!-- Loading overlay -->
+    <div id="mapLoading">
+      <div style="text-align:center;">
+        <div class="spinner-ring mx-auto mb-3"></div>
+        <div style="color:var(--text-muted);font-size:.85rem;">Loading complaints…</div>
+      </div>
+    </div>
+
+    <!-- Login overlay -->
+    <div id="overlay">
+      <div class="ov-card glass-card p-4 fade-up">
+        <div class="text-center mb-4">
+          <i class="bi bi-map-fill mb-2" style="font-size:2.4rem;background:linear-gradient(135deg,var(--primary),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;display:block;"></i>
+          <h5 style="color:var(--text-primary);font-weight:700;" class="mb-1">Complaint Map</h5>
+          <p style="color:var(--text-muted);font-size:.84rem;" class="mb-0">Login to view live complaint locations</p>
+        </div>
+        <div class="mb-3"><label class="form-label-custom">Username</label><input type="text" id="ovUser" class="glass-input" placeholder="e.g. officer1" /></div>
+        <div class="mb-3"><label class="form-label-custom">Password</label><input type="password" id="ovPass" class="glass-input" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()" /></div>
+        <div id="ovErr" class="d-none mb-3" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:10px 14px;color:var(--danger);font-size:.83rem;"></div>
+        <button class="btn-grad w-100" style="padding:12px;justify-content:center;" onclick="doLogin()">
+          <i class="bi bi-box-arrow-in-right"></i>Login &amp; View Map
+        </button>
+        <p style="color:var(--text-muted);font-size:.73rem;" class="text-center mt-3 mb-0">officer1/officer123 · admin/admin123 · citizen1/citizen123</p>
+      </div>
+    </div>
+
+    <!-- Floating filter panel -->
+    <div id="filterPanel" class="map-panel" style="display:none;">
+      <div class="fp-head"><i class="bi bi-funnel-fill me-1"></i>Filters</div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="showResolved" onchange="applyFilters()" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.25);" />
+        <label class="form-check-label" for="showResolved" style="color:var(--text-muted);font-size:.83rem;">Show resolved</label>
+      </div>
+      <select id="filterWard" class="glass-select" onchange="applyFilters()">
+        <option value="">All Wards</option>
+      </select>
+      <select id="filterSev" class="glass-select" onchange="applyFilters()">
+        <option value="">All Severities</option>
+        <option value="critical">🔴 Critical</option>
+        <option value="medium">🟡 Medium</option>
+        <option value="low">🔵 Low</option>
+      </select>
+      <button class="btn-grad w-100" style="padding:9px;font-size:.83rem;justify-content:center;margin-top:4px;" onclick="loadMapData()">
+        <i class="bi bi-arrow-clockwise"></i>Refresh Map
+      </button>
+    </div>
+
+    <!-- Legend -->
+    <div id="legend" class="map-panel" style="display:none;">
+      <div class="lg-title">Severity</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#ef4444;"></div>Critical</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#f59e0b;"></div>Medium</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#06b6d4;"></div>Low</div>
+      <div class="lg-row"><div class="lg-dot" style="background:#64748b;"></div>Resolved</div>
+    </div>
+
+  </div><!-- /mapWrap -->
+</div><!-- /page-content -->
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const API    = 'http://localhost:8000';
+let token    = localStorage.getItem('rcms_token');
+let userRole = '';
+let mapInst, allMarkers = [], allData = [];
+
+function authHeaders() { return { 'Authorization': `Bearer ${token}` }; }
+
+/* ── Login ──────────────────────────────────────────────── */
+async function doLogin() {
+  const username = document.getElementById('ovUser').value.trim();
+  const password = document.getElementById('ovPass').value;
+  const err = document.getElementById('ovErr');
+  err.classList.add('d-none');
+  try {
+    const res  = await fetch(`${API}/login`, { method:'POST', body: new URLSearchParams({username,password}) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail||'Login failed');
+    localStorage.setItem('rcms_token', data.access_token);
+    localStorage.setItem('rcms_user', JSON.stringify({username:data.username,role:data.role}));
+    token    = data.access_token;
+    userRole = data.role;
+    initMap();
+  } catch(e) {
+    err.textContent = e.message; err.classList.remove('d-none');
+    document.getElementById('ovUser').classList.add('shake');
+    setTimeout(()=>document.getElementById('ovUser').classList.remove('shake'),450);
+  }
+}
+
+function logout() {
+  localStorage.removeItem('rcms_token'); localStorage.removeItem('rcms_user');
+  token = null; location.reload();
+}
+
+/* ── Init map ───────────────────────────────────────────── */
+function initMap() {
+  document.getElementById('overlay').classList.add('hidden');
+  document.getElementById('filterPanel').style.display = 'block';
+  document.getElementById('legend').style.display      = 'block';
+  document.getElementById('statsBar').style.display    = 'flex';
+  document.getElementById('cntBadge').style.display    = 'flex';
+
+  const user = JSON.parse(localStorage.getItem('rcms_user')||'{}');
+  userRole = user.role || userRole;
+  if (user.username) {
+    document.getElementById('navUser').innerHTML =
+      `<span style="background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.15);border-radius:999px;padding:4px 14px;color:var(--text-primary);font-size:.8rem;">${user.username} <span style="color:var(--accent);">(${user.role})</span></span>
+       <button class="btn-glass ms-2" style="padding:5px 12px;font-size:.8rem;" onclick="logout()"><i class="bi bi-box-arrow-right me-1"></i>Logout</button>`;
+  }
+
+  /* CartoDB Dark Matter tiles */
+  mapInst = L.map('map').setView([18.5204, 73.8567], 13);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://carto.com/" style="color:#94a3b8">CartoDB</a>',
+    subdomains: 'abcd', maxZoom: 19
+  }).addTo(mapInst);
+
+  loadMapData();
+}
+
+/* ── Load GPS data ──────────────────────────────────────── */
+async function loadMapData() {
+  document.getElementById('mapLoading').classList.remove('hidden');
+  try {
+    const res  = await fetch(`${API}/complaints/map-data`, { headers: authHeaders() });
+    if (res.status===401) { logout(); return; }
+    allData = await res.json();
+
+    /* Stats bar totals */
+    document.getElementById('sTotal').textContent    = allData.length;
+    document.getElementById('sOpen').textContent     = allData.filter(c=>c.status==='open').length;
+    document.getElementById('sProgress').textContent = allData.filter(c=>c.status==='in_progress').length;
+    document.getElementById('sResolved').textContent = allData.filter(c=>c.status==='resolved').length;
+
+    /* Populate ward filter */
+    const wards = [...new Set(allData.map(c=>c.ward_name))].sort();
+    const sel   = document.getElementById('filterWard');
+    const cur   = sel.value;
+    sel.innerHTML = '<option value="">All Wards</option>' +
+      wards.map(w=>`<option value="${w}"${w===cur?' selected':''}>${w}</option>`).join('');
+
+    applyFilters();
+  } catch(e) { console.error('Map data error:', e); }
+  finally { document.getElementById('mapLoading').classList.add('hidden'); }
+}
+
+/* ── Apply filters & repaint markers ───────────────────── */
+function applyFilters() {
+  const showResolved = document.getElementById('showResolved').checked;
+  const filterWard   = document.getElementById('filterWard').value;
+  const filterSev    = document.getElementById('filterSev').value;
+
+  allMarkers.forEach(m => m.remove());
+  allMarkers = [];
+
+  const visible = allData.filter(c => {
+    if (!showResolved && c.status==='resolved') return false;
+    if (filterWard && c.ward_name!==filterWard)  return false;
+    if (filterSev  && c.severity!==filterSev)    return false;
+    if (!c.latitude || !c.longitude)             return false;
+    return true;
+  });
+
+  document.getElementById('cntNum').textContent  = visible.length;
+  document.getElementById('cntNum2').textContent = visible.length;
+
+  const markerColor = c =>
+    c.status==='resolved' ? {fill:'#64748b',stroke:'#475569'} :
+    c.severity==='critical' ? {fill:'#ef4444',stroke:'#991b1b'} :
+    c.severity==='medium'   ? {fill:'#f59e0b',stroke:'#92400e'} :
+                              {fill:'#06b6d4',stroke:'#0e7490'};
+
+  visible.forEach(c => {
+    const mc = markerColor(c);
+    const marker = L.circleMarker([c.latitude, c.longitude], {
+      radius:10, fillColor:mc.fill, color:mc.stroke, weight:1.5,
+      fillOpacity: c.status==='resolved'?.5:.85, interactive:true
+    }).addTo(mapInst);
+
+    /* Hover tooltip */
+    marker.bindTooltip(`<b>#${c.complaint_id}</b> · ${c.damage_type}`,{
+      className:'leaflet-tooltip-dark', direction:'top', offset:[0,-8]
+    });
+
+    /* Hover expand */
+    marker.on('mouseover', function(){ this.setRadius(14); });
+    marker.on('mouseout',  function(){ this.setRadius(10); });
+
+    /* Popup */
+    const canAssign = c.status!=='resolved' && (userRole==='officer'||userRole==='admin');
+    const sevCls    = c.severity==='critical'?'badge-critical':c.severity==='medium'?'badge-medium':'badge-low';
+    const stCls     = `badge-${c.status}`;
+    const popup = `
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <strong style="font-size:.95rem;">#${c.complaint_id}</strong>
+          <span class="st-badge ${stCls}">${c.status.replace('_',' ')}</span>
+        </div>
+        <div style="margin-bottom:6px;">
+          <span style="color:var(--accent);font-weight:600;">${c.damage_type}</span>
+          <span class="${sevCls}" style="margin-left:6px;">${c.severity}</span>
+        </div>
+        <div style="font-size:.78rem;color:#94a3b8;line-height:1.7;">
+          <i class="bi bi-map me-1"></i>${c.ward_name}<br>
+          <i class="bi bi-person me-1"></i>${c.citizen_name}<br>
+          <i class="bi bi-geo-alt me-1"></i>${(c.address||'').slice(0,50)}${(c.address||'').length>50?'…':''}
+        </div>
+        ${canAssign ? `
+        <hr style="border-color:rgba(255,255,255,.1);margin:10px 0;" />
+        <div id="ar-${c.complaint_id}"></div>
+        <button class="btn-grad" style="width:100%;padding:8px;font-size:.8rem;justify-content:center;" onclick="autoAssign(${c.complaint_id},this)">
+          <i class="bi bi-robot"></i>Auto-assign Worker
+        </button>` : ''}
+      </div>`;
+
+    marker.bindPopup(popup, {maxWidth:280});
+    allMarkers.push(marker);
+  });
+}
+
+/* ── Auto-assign ────────────────────────────────────────── */
+async function autoAssign(id, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;"></span> Finding…';
+  try {
+    const res  = await fetch(`${API}/complaints/${id}/auto-assign`, { method:'POST', headers:authHeaders() });
+    const data = await res.json();
+    const el   = document.getElementById(`ar-${id}`);
+    if (!res.ok) {
+      el.innerHTML=`<div style="background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:8px 10px;color:var(--warning);font-size:.78rem;margin-bottom:8px;">${data.detail}</div>`;
+      btn.innerHTML='<i class="bi bi-robot"></i>Retry'; btn.disabled=false; return;
+    }
+    el.innerHTML=`<div style="background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:8px 10px;color:var(--success);font-size:.78rem;margin-bottom:8px;"><i class="bi bi-check-circle-fill me-1"></i>${data.worker_name} assigned · ${data.distance_km} km</div>`;
+    btn.remove();
+    setTimeout(loadMapData, 1200);
+  } catch(e) { btn.innerHTML='Error — retry'; btn.disabled=false; }
+}
+
+/* ── Boot ───────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  if (token) {
+    const user = JSON.parse(localStorage.getItem('rcms_user')||'{}');
+    userRole   = user.role || '';
+    initMap();
+  }
+  /* else login overlay stays visible */
+});
+</script>
+
+<!-- Leaflet tooltip dark override -->
+<style>
+  .leaflet-tooltip-dark {
+    background: rgba(15,23,42,.95) !important;
+    border: 1px solid rgba(255,255,255,.15) !important;
+    color: #f1f5f9 !important; border-radius: 8px !important;
+    font-family: 'Inter',sans-serif; font-size:.78rem;
+    padding: 5px 10px !important; box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  }
+  .leaflet-tooltip-dark::before { border-top-color: rgba(255,255,255,.15) !important; }
+  .leaflet-control-attribution { background: rgba(15,23,42,.8) !important; color:#475569; font-size:.65rem; }
+  .leaflet-control-attribution a { color:#64748b; }
+  .leaflet-control-zoom a {
+    background: rgba(15,23,42,.9) !important; border-color: rgba(255,255,255,.15) !important;
+    color:#f1f5f9 !important;
+  }
+  .leaflet-control-zoom a:hover { background: rgba(26,86,219,.5) !important; }
+  /* Reuse spin for button spinner */
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+<script src="/static/js/micro.js"></script>
+</body>
+</html>

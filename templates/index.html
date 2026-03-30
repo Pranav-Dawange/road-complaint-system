@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>File a Complaint — Road Complaint System</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <link href="/static/css/design.css" rel="stylesheet" />
+  <style>
+    .hero { text-align:center; padding:3.5rem 1rem 2rem; }
+    .hero h1 { font-size:2.6rem; margin-bottom:.75rem; }
+    .hero p  { font-size:1rem; max-width:500px; margin:0 auto; }
+
+    .upload-zone {
+      background: rgba(255,255,255,0.04);
+      border: 2px dashed rgba(255,255,255,0.2);
+      border-radius: 16px;
+      padding: 2rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: rgba(6,182,212,0.6);
+      background: rgba(6,182,212,0.05);
+    }
+    #imgPreview  { display:none; max-height:200px; width:100%; object-fit:cover; border-radius:12px; margin-top:12px; }
+    #fileSizeWarn{ display:none; }
+
+    /* Override Bootstrap form controls */
+    .form-control, .form-select { all:unset; display:block; }
+    .glass-input, .glass-select { width:100% !important; }
+
+    /* Response banners */
+    .msg-success { background:rgba(16,185,129,.12); border:1px solid rgba(16,185,129,.3); color:#10b981; border-radius:14px; padding:14px 18px; }
+    .msg-danger  { background:rgba(239,68,68,.12);  border:1px solid rgba(239,68,68,.3);  color:#ef4444; border-radius:14px; padding:14px 18px; }
+    .msg-warning { background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.3); color:#f59e0b; border-radius:14px; padding:14px 18px; }
+
+    #loginSection      { display:none; }
+    #complaintFormCard { display:none; }
+    #responseMsg       { display:none; }
+
+    /* Auth Tabs */
+    .auth-tabs { display:flex; border-bottom:1px solid rgba(255,255,255,0.1); margin-bottom:1.5rem; }
+    .auth-tab {
+      flex:1; text-align:center; padding:10px 0; cursor:pointer; font-size:.9rem;
+      color:#64748b; font-weight:500; transition:all .2s;
+    }
+    .auth-tab.active {
+      color:#fff; font-weight:600; border-bottom:2px solid #06b6d4;
+    }
+    .tab-content { display:none; opacity:0; transform:translateY(8px); transition:opacity .25s ease, transform .25s ease; }
+    .tab-content.active { display:block; opacity:1; transform:translateY(0); }
+  </style>
+</head>
+<body>
+<!-- Blobs -->
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
+<div class="blob blob-3"></div>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-glass">
+  <div class="container px-3">
+    <a class="navbar-brand navbar-brand-custom" href="/index">
+      <i class="bi bi-cone-striped brand-icon"></i>Road Complaint System
+    </a>
+    <button class="navbar-toggler-custom" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
+      <i class="bi bi-list"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="navMenu">
+      <ul class="navbar-nav ms-auto align-items-center gap-1">
+        <li class="nav-item"><a class="nav-link-custom active" href="/index"><i class="bi bi-pencil-square"></i>File Complaint</a></li>
+        <li class="nav-item"><a class="nav-link-custom" href="/dashboard"><i class="bi bi-speedometer2"></i>Dashboard</a></li>
+        <li class="nav-item"><a class="nav-link-custom" href="/analytics"><i class="bi bi-bar-chart-line"></i>Analytics</a></li>
+        <li class="nav-item"><a class="nav-link-custom" href="/map"><i class="bi bi-map"></i>Map</a></li>
+        <li class="nav-item ms-2" id="navUser"></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="page-content">
+  <!-- Hero -->
+  <div class="hero fade-up">
+    <div class="mb-3">
+      <span style="background:rgba(6,182,212,.15);border:1px solid rgba(6,182,212,.3);border-radius:999px;padding:5px 16px;font-size:.78rem;color:var(--accent);">
+        <i class="bi bi-shield-check me-1"></i>Pune Municipal Corporation
+      </span>
+    </div>
+    <h1 class="gradient-text">Report a Road Issue</h1>
+    <p style="color:var(--text-muted);">Help keep Pune's roads safe — your complaint reaches the ward officer instantly.</p>
+  </div>
+
+  <div class="container pb-5" style="max-width:680px;">
+
+    <!-- Response message -->
+    <div id="responseMsg" class="mb-4 fade-up"></div>
+
+    <!-- Login/Signup card -->
+    <div id="loginSection" class="glass-card p-4 mb-4 mx-auto fade-up" style="max-width:480px;">
+      <div class="auth-tabs">
+        <div class="auth-tab active" onclick="switchTab('login', this)">Login</div>
+        <div class="auth-tab" onclick="switchTab('signup', this)">Sign Up</div>
+      </div>
+
+      <!-- Login Tab -->
+      <div id="tab-login" class="tab-content active text-center">
+        <i class="bi bi-shield-lock-fill mb-3" style="font-size:2.4rem;background:linear-gradient(135deg,var(--primary),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;display:block;"></i>
+        <h5 style="color:var(--text-primary);font-weight:700;" class="mb-1">Login to Continue</h5>
+        <p style="color:var(--text-muted);font-size:.86rem;" class="mb-4">Sign in to file a complaint</p>
+        <div class="row g-3 text-start">
+          <div class="col-12">
+            <label class="form-label-custom">Username</label>
+            <input type="text" id="loginUser" class="glass-input" placeholder="e.g. citizen1" />
+          </div>
+          <div class="col-12">
+            <label class="form-label-custom">Password</label>
+            <div class="position-relative">
+              <input type="password" id="loginPass" class="glass-input pe-5" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()" />
+              <button class="btn btn-link position-absolute end-0 top-50 translate-middle-y text-decoration-none" style="color:var(--text-muted);" onclick="togglePassword('loginPass', this)" type="button">
+                <i class="bi bi-eye-slash"></i>
+              </button>
+            </div>
+          </div>
+          <div class="col-12">
+            <div id="loginErr" class="msg-danger d-none mb-2" style="font-size:.83rem;text-align:left;"></div>
+            <button class="btn-grad w-100" style="padding:12px;margin-top:8px;justify-content:center;" onclick="doLogin()">
+              <i class="bi bi-box-arrow-in-right"></i>Login
+            </button>
+          </div>
+        </div>
+        <div class="mt-4" style="font-size:.85rem;">
+          <span style="color:var(--text-muted);">Don't have an account?</span> 
+          <a href="javascript:void(0)" onclick="switchTab('signup', null)" style="color:var(--accent);text-decoration:none;font-weight:600;">Sign up &rarr;</a>
+        </div>
+        <p style="color:var(--text-muted);font-size:.73rem;" class="mt-3 mb-0">Default: citizen1 / citizen123</p>
+      </div>
+
+      <!-- Sign Up Tab -->
+      <div id="tab-signup" class="tab-content text-center">
+        <i class="bi bi-person-plus-fill mb-3" style="font-size:2.4rem;background:linear-gradient(135deg,var(--primary),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;display:block;"></i>
+        <h5 style="color:var(--text-primary);font-weight:700;" class="mb-1">Create Citizen Account</h5>
+        <p style="color:var(--text-muted);font-size:.86rem;" class="mb-4">Register as a citizen</p>
+        <div class="row g-3 text-start">
+          <div class="col-12">
+            <label class="form-label-custom">Full Name</label>
+            <input type="text" id="signupName" class="glass-input" placeholder="e.g. Jane Doe" />
+          </div>
+          <div class="col-12">
+            <label class="form-label-custom">Username</label>
+            <input type="text" id="signupUser" class="glass-input" placeholder="e.g. citizen_new" />
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label-custom">Password</label>
+            <div class="position-relative">
+              <input type="password" id="signupPass" class="glass-input pe-5" placeholder="Password" />
+              <button class="btn btn-link position-absolute end-0 top-50 translate-middle-y text-decoration-none" style="color:var(--text-muted);" onclick="togglePassword('signupPass', this)" type="button">
+                <i class="bi bi-eye-slash"></i>
+              </button>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label-custom">Confirm Password</label>
+            <div class="position-relative">
+              <input type="password" id="signupPassConfirm" class="glass-input pe-5" placeholder="Confirm" />
+              <button class="btn btn-link position-absolute end-0 top-50 translate-middle-y text-decoration-none" style="color:var(--text-muted);" onclick="togglePassword('signupPassConfirm', this)" type="button">
+                <i class="bi bi-eye-slash"></i>
+              </button>
+            </div>
+          </div>
+          <div class="col-12 mt-4">
+            <div id="signupErr" class="msg-danger d-none mb-2" style="font-size:.83rem;text-align:left;"></div>
+            <button class="btn-grad w-100" style="padding:12px;justify-content:center;">
+              <i class="bi bi-person-plus"></i>Sign Up
+            </button>
+          </div>
+        </div>
+        <div class="mt-4" style="font-size:.85rem;">
+          <span style="color:var(--text-muted);">Already have an account?</span> 
+          <a href="javascript:void(0)" onclick="switchTab('login', null)" style="color:var(--accent);text-decoration:none;font-weight:600;">Log in &rarr;</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Complaint form card -->
+    <div id="complaintFormCard" class="glass-card p-4 fade-up delay-1">
+
+      <!-- Section 1 — Citizen Details -->
+      <div class="section-head"><i class="bi bi-person-fill me-2"></i>Citizen Details</div>
+      <div class="row g-3">
+        <div class="col-sm-6">
+          <label class="form-label-custom">Citizen ID (if known)</label>
+          <input type="number" id="citizenId" class="glass-input" placeholder="Leave blank if new" min="1" />
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label-custom">Full Name</label>
+          <input type="text" id="cName" class="glass-input" placeholder="e.g. Aarav Mehta" />
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label-custom">Phone</label>
+          <input type="tel" id="cPhone" class="glass-input" placeholder="10-digit mobile" maxlength="15" />
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label-custom">Email</label>
+          <input type="email" id="cEmail" class="glass-input" placeholder="Optional" />
+        </div>
+        <div class="col-12">
+          <label class="form-label-custom">Residential Address</label>
+          <input type="text" id="cAddress" class="glass-input" placeholder="Your home address" />
+        </div>
+      </div>
+
+      <hr class="glass-divider" />
+
+      <!-- Section 2 — Complaint Details -->
+      <div class="section-head"><i class="bi bi-cone-striped me-2"></i>Complaint Details</div>
+      <div class="row g-3">
+        <div class="col-sm-6">
+          <label class="form-label-custom">Ward <span style="color:var(--danger)">*</span></label>
+          <select id="wardId" class="glass-select">
+            <option value="">-- Select Ward --</option>
+            <option value="1">1 – Shivajinagar</option>
+            <option value="2">2 – Kothrud</option>
+            <option value="3">3 – Hadapsar</option>
+            <option value="4">4 – Warje</option>
+            <option value="5">5 – Aundh</option>
+          </select>
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label-custom">Damage Type <span style="color:var(--danger)">*</span></label>
+          <select id="damageType" class="glass-select">
+            <option value="">-- Select Type --</option>
+            <option value="pothole">🕳️ Pothole</option>
+            <option value="crack">🧱 Crack</option>
+            <option value="waterlogging">💧 Waterlogging</option>
+            <option value="subsidence">⬇️ Subsidence</option>
+          </select>
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label-custom">Severity <span style="color:var(--danger)">*</span></label>
+          <select id="severity" class="glass-select">
+            <option value="">-- Select --</option>
+            <option value="low">🔵 Low</option>
+            <option value="medium">🟡 Medium</option>
+            <option value="critical">🔴 Critical</option>
+          </select>
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label-custom">Location of Damage <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="complaintAddress" class="glass-input" placeholder="Near Bus Stop, MG Road…" />
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label-custom">Latitude <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <input type="number" id="lat" class="glass-input" placeholder="e.g. 18.5308" step="any" />
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label-custom">Longitude <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <input type="number" id="lng" class="glass-input" placeholder="e.g. 73.8474" step="any" />
+        </div>
+        <div class="col-12">
+          <label class="form-label-custom">Description <span style="color:var(--danger)">*</span></label>
+          <textarea id="description" class="glass-input" rows="4" placeholder="Describe road damage in detail (min 20 chars)…" style="resize:vertical;height:auto;"></textarea>
+        </div>
+      </div>
+
+      <hr class="glass-divider" />
+
+      <!-- Section 3 — Photo Upload -->
+      <div class="section-head"><i class="bi bi-camera-fill me-2"></i>Photo <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0;font-size:.8rem;">(optional)</span></div>
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('photoInput').click()">
+        <i class="bi bi-cloud-upload-fill" style="font-size:2rem;color:var(--accent);display:block;margin-bottom:8px;"></i>
+        <p style="color:var(--text-primary);font-weight:500;margin:0 0 4px;">Click or drag photo here</p>
+        <p style="font-size:.78rem;color:var(--text-muted);margin:0;">JPG, PNG · max 5 MB</p>
+        <input type="file" id="photoInput" accept=".jpg,.jpeg,.png" onchange="previewPhoto(this)" style="display:none;" />
+      </div>
+      <img id="imgPreview" src="" alt="Preview" />
+      <div id="fileSizeWarn" class="msg-warning mt-2" style="font-size:.83rem;">
+        <i class="bi bi-exclamation-triangle me-1"></i>File exceeds 5 MB — choose a smaller image.
+      </div>
+      <div id="fileInfo" style="display:none;color:var(--text-muted);font-size:.78rem;margin-top:6px;"></div>
+
+      <hr class="glass-divider" />
+
+      <!-- Submit -->
+      <button id="submitBtn" class="btn-grad w-100" style="padding:14px;font-size:1rem;justify-content:center;" onclick="submitComplaint()">
+        <i class="bi bi-send-fill"></i>Submit Complaint
+      </button>
+
+    </div><!-- /form card -->
+  </div>
+</div><!-- /page-content -->
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const API = 'http://localhost:8000';
+let token = localStorage.getItem('rcms_token');
+
+function authHeaders() { return { 'Authorization': `Bearer ${token}` }; }
+
+/* ── Ripple on all .btn-grad ─────────────────────────────── */
+document.querySelectorAll('.btn-grad').forEach(btn => {
+  btn.addEventListener('click', function(e) {
+    const s = document.createElement('span');
+    const r = this.getBoundingClientRect();
+    const z = Math.max(r.width, r.height);
+    s.className = 'ripple-span';
+    s.style.cssText = `width:${z}px;height:${z}px;left:${e.clientX-r.left-z/2}px;top:${e.clientY-r.top-z/2}px`;
+    this.appendChild(s);
+    setTimeout(() => s.remove(), 700);
+  });
+});
+
+/* ── Auth ────────────────────────────────────────────────── */
+function checkAuth() {
+  const user = JSON.parse(localStorage.getItem('rcms_user') || '{}');
+  if (token && user.username) {
+    document.getElementById('loginSection').style.display = 'none';
+    document.getElementById('complaintFormCard').style.display = 'block';
+    document.getElementById('navUser').innerHTML =
+      `<span style="background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.15);border-radius:999px;padding:4px 14px;color:var(--text-primary);font-size:.8rem;">${user.username}</span>
+       <button class="btn-glass ms-2" style="padding:5px 12px;font-size:.8rem;" onclick="logout()"><i class="bi bi-box-arrow-right me-1"></i>Logout</button>`;
+  } else {
+    document.getElementById('loginSection').style.display = 'block';
+    document.getElementById('complaintFormCard').style.display = 'none';
+  }
+}
+
+function logout() {
+  localStorage.removeItem('rcms_token'); localStorage.removeItem('rcms_user');
+  token = null; checkAuth();
+}
+
+async function doLogin() {
+  const usernameEl = document.getElementById('loginUser');
+  const passwordEl = document.getElementById('loginPass');
+  const errEl = document.getElementById('loginErr');
+  const btn = event.currentTarget.tagName === 'BUTTON' ? event.currentTarget : document.querySelector('#tab-login .btn-grad');
+  
+  const username = usernameEl.value.trim();
+  const password = passwordEl.value;
+  
+  errEl.classList.add('d-none');
+  errEl.classList.remove('fade-up');
+  [usernameEl, passwordEl].forEach(el => { el.style.borderColor = ''; el.style.boxShadow = ''; });
+
+  if (!username || !password) {
+    errEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Enter username and password.';
+    errEl.classList.remove('d-none');
+    errEl.classList.add('fade-up');
+    if (!username) { usernameEl.style.borderColor = 'rgba(239,68,68,0.8)'; usernameEl.style.boxShadow = '0 0 10px rgba(239,68,68,0.2)'; }
+    if (!password) { passwordEl.style.borderColor = 'rgba(239,68,68,0.8)'; passwordEl.style.boxShadow = '0 0 10px rgba(239,68,68,0.2)'; }
+    return;
+  }
+  
+  const oldHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" style="width:1rem;height:1rem;border-width:2px"></span>Logging in...';
+
+  try {
+    const res  = await fetch(`${API}/login`, { method:'POST', body: new URLSearchParams({ username, password }) });
+    const data = await res.json();
+    btn.disabled = false;
+    btn.innerHTML = oldHtml;
+
+    if (!res.ok) throw new Error(data.detail || 'Login failed');
+    localStorage.setItem('rcms_token', data.access_token);
+    localStorage.setItem('rcms_user', JSON.stringify({ username: data.username, role: data.role }));
+    token = data.access_token;
+    checkAuth();
+  } catch(e) {
+    btn.disabled = false;
+    btn.innerHTML = oldHtml;
+    errEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-1"></i>${e.message}`;
+    errEl.classList.remove('d-none');
+    errEl.classList.add('fade-up');
+    ['loginUser','loginPass'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.style.borderColor = 'rgba(239,68,68,0.8)';
+        el.style.boxShadow = '0 0 10px rgba(239,68,68,0.2)';
+        if (window.shakeEl) window.shakeEl(el);
+      }
+    });
+  }
+}
+
+/* ── Clear errors on focus ────────────────────────────── */
+document.querySelectorAll('input').forEach(input => {
+  input.addEventListener('focus', function() {
+    this.style.borderColor = '';
+    this.style.boxShadow = '';
+    const err = this.closest('.tab-content').querySelector('[id$="Err"]');
+    if (err) { err.classList.add('d-none'); err.classList.remove('fade-up'); }
+  });
+});
+
+/* ── Tabs & Sign Up ───────────────────────────────────── */
+function togglePassword(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  const icon = btn.querySelector('i');
+  if (inp.type === 'password') {
+    inp.type = 'text'; icon.className = 'bi bi-eye text-light';
+  } else {
+    inp.type = 'password'; icon.className = 'bi bi-eye-slash color-muted';
+  }
+}
+
+function switchTab(tabId, el) {
+  if (el) {
+    document.querySelectorAll('#loginSection .auth-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+  } else {
+    document.querySelectorAll('#loginSection .auth-tab').forEach(t => t.classList.remove('active'));
+    const targetTab = document.querySelector(`#loginSection .auth-tab[onclick*="${tabId}"]`);
+    if (targetTab) targetTab.classList.add('active');
+  }
+  document.querySelectorAll('#loginSection .tab-content').forEach(c => {
+    c.classList.remove('active');
+    setTimeout(() => { if (!c.classList.contains('active')) c.style.display = 'none'; }, 250);
+  });
+  const activeContent = document.getElementById(`tab-${tabId}`);
+  activeContent.style.display = 'block';
+  // Small offset for transition
+  setTimeout(() => activeContent.classList.add('active'), 20);
+}
+
+async function doSignup(role) {
+  const nameEl = document.getElementById('signupName');
+  const userEl = document.getElementById('signupUser');
+  const passEl = document.getElementById('signupPass');
+  const confEl = document.getElementById('signupPassConfirm');
+  const errEl  = document.getElementById('signupErr');
+  
+  const name = nameEl.value.trim();
+  const user = userEl.value.trim();
+  const pass = passEl.value;
+  const conf = confEl.value;
+  
+  errEl.classList.add('d-none');
+  errEl.classList.remove('fade-up');
+  errEl.className = 'msg-danger d-none mb-2 text-start';
+  [nameEl, userEl, passEl, confEl].forEach(el => { el.style.borderColor = ''; el.style.boxShadow = ''; });
+
+  const showError = (msg, elements) => {
+    errEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-1"></i>${msg}`;
+    errEl.className = 'msg-danger mb-2 text-start fade-up';
+    errEl.classList.remove('d-none');
+    elements.forEach(el => {
+      el.style.borderColor = 'rgba(239,68,68,0.8)';
+      el.style.boxShadow = '0 0 10px rgba(239,68,68,0.2)';
+      if (window.shakeEl) window.shakeEl(el);
+    });
+  };
+
+  if (!name || !user || !pass || !conf) {
+    let empty = [];
+    if (!name) empty.push(nameEl);
+    if (!user) empty.push(userEl);
+    if (!pass) empty.push(passEl);
+    if (!conf) empty.push(confEl);
+    return showError('All fields are required.', empty);
+  }
+  if (user.length < 3) return showError('Username must be at least 3 characters.', [userEl]);
+  if (pass.length < 6) return showError('Password must be at least 6 characters.', [passEl]);
+  if (pass !== conf) return showError('Passwords do not match.', [passEl, confEl]);
+
+  const btn = event.currentTarget.tagName === 'BUTTON' ? event.currentTarget : document.querySelector('#tab-signup .btn-grad');
+  const oldHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" style="width:1rem;height:1rem;border-width:2px"></span>Creating account...';
+
+  try {
+    const res = await fetch(`${API}/register`, { 
+      method:'POST', 
+      headers:{'Content-Type':'application/json'}, 
+      body: JSON.stringify({ username: user, password: pass, role }) 
+    });
+    const data = await res.json();
+    
+    btn.disabled = false;
+    btn.innerHTML = oldHtml;
+
+    if (!res.ok) {
+      if (data.detail && data.detail.toLowerCase().includes('already')) throw new Error('Username already taken');
+      throw new Error(data.detail || 'Registration failed');
+    }
+    
+    
+    errEl.innerHTML = `<i class="bi bi-check-circle-fill me-1"></i>Account created! You can now log in.`;
+    errEl.className = 'msg-success mb-2 text-start fade-up';
+    errEl.classList.remove('d-none');
+    
+    document.getElementById('loginUser').value = user;
+    nameEl.value = ''; userEl.value = ''; passEl.value = ''; confEl.value = '';
+
+    setTimeout(() => {
+      switchTab('login', null);
+      errEl.classList.add('d-none');
+    }, 1500);
+
+  } catch(e) {
+    btn.disabled = false;
+    btn.innerHTML = oldHtml;
+    showError(e.message, [userEl]);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('tab') === 'signup') {
+    // switchTab expects an element unless provided null
+    switchTab('signup', null);
+  }
+});
+
+/* ── Drag & Drop Photo ───────────────────────────────────── */
+const zone = document.getElementById('uploadZone');
+if (zone) {
+  zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    const files = e.dataTransfer.files;
+    if (files[0]) { document.getElementById('photoInput').files = files; previewPhoto(document.getElementById('photoInput')); }
+  });
+}
+
+function previewPhoto(input) {
+  const warn    = document.getElementById('fileSizeWarn');
+  const preview = document.getElementById('imgPreview');
+  const info    = document.getElementById('fileInfo');
+  const file    = input.files[0];
+  if (!file) { preview.style.display='none'; warn.style.display='none'; info.style.display='none'; return; }
+  if (file.size > 5 * 1024 * 1024) {
+    warn.style.display='block'; preview.style.display='none'; info.style.display='none'; return;
+  }
+  warn.style.display='none';
+  info.textContent = `${file.name} · ${(file.size/1024).toFixed(0)} KB`;
+  info.style.display = 'block';
+  const reader = new FileReader();
+  reader.onload = e => { preview.src = e.target.result; preview.style.display='block'; preview.style.animation='fadeUp .4s ease'; };
+  reader.readAsDataURL(file);
+}
+
+/* ── Submit Complaint ────────────────────────────────────── */
+async function submitComplaint() {
+  if (!token) { showMsg('<i class="bi bi-lock-fill me-2"></i>Please log in first.', 'warning'); return; }
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" style="width:1rem;height:1rem;border-width:2px;"></span>Submitting…';
+
+  const citizenIdRaw = document.getElementById('citizenId').value.trim();
+  const name         = document.getElementById('cName').value.trim();
+  const phone        = document.getElementById('cPhone').value.trim();
+  const email        = document.getElementById('cEmail').value.trim();
+  const cAddr        = document.getElementById('cAddress').value.trim();
+  const wardId       = document.getElementById('wardId').value;
+  const damageType   = document.getElementById('damageType').value;
+  const severity     = document.getElementById('severity').value;
+  const cmpAddr      = document.getElementById('complaintAddress').value.trim();
+  const lat          = document.getElementById('lat').value.trim();
+  const lng          = document.getElementById('lng').value.trim();
+  const description  = document.getElementById('description').value.trim();
+  const photoFile    = document.getElementById('photoInput').files[0];
+
+  if (!wardId || !damageType || !severity || !cmpAddr || description.length < 20) {
+    showMsg('<i class="bi bi-exclamation-circle me-2"></i>Fill all required fields. Description must be at least 20 chars.', 'danger');
+    reset(); return;
+  }
+  if (photoFile && photoFile.size > 5*1024*1024) { showMsg('Photo exceeds 5 MB.', 'danger'); reset(); return; }
+
+  try {
+    let citizen_id = parseInt(citizenIdRaw) || null;
+    if (!citizen_id) {
+      if (!name || !phone) { showMsg('Enter your Name and Phone, or existing Citizen ID.', 'danger'); reset(); return; }
+      const regRes  = await fetch(`${API}/citizens`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name, phone, email:email||null, address:cAddr||null }) });
+      const regData = await regRes.json();
+      if (!regRes.ok && regData.detail?.toLowerCase().includes('already')) { showMsg(`${regData.detail} Enter your Citizen ID directly.`, 'warning'); reset(); return; }
+      if (!regRes.ok) throw new Error(regData.detail || 'Registration failed');
+      citizen_id = regData.citizen_id;
+    }
+
+    const fd = new FormData();
+    fd.append('citizen_id', citizen_id); fd.append('ward_id', wardId);
+    fd.append('description', description); fd.append('damage_type', damageType);
+    fd.append('severity', severity); fd.append('address', cmpAddr);
+    if (lat) fd.append('latitude', lat);
+    if (lng) fd.append('longitude', lng);
+    if (photoFile) fd.append('photo', photoFile);
+
+    const cmpRes  = await fetch(`${API}/complaints`, { method:'POST', headers: authHeaders(), body: fd });
+    const cmpData = await cmpRes.json();
+    if (!cmpRes.ok) throw new Error(cmpData.detail || 'Failed to file complaint');
+
+    showMsg(`<i class="bi bi-check-circle-fill me-2"></i><strong>Complaint #${cmpData.complaint_id} filed!</strong> A ward officer will review it shortly.`, 'success');
+    document.querySelectorAll('#complaintFormCard input, #complaintFormCard select, #complaintFormCard textarea').forEach(el => el.value = '');
+    document.getElementById('imgPreview').style.display = 'none';
+    document.getElementById('fileInfo').style.display   = 'none';
+  } catch(e) {
+    showMsg(`<i class="bi bi-x-circle me-2"></i>${e.message}`, 'danger');
+  } finally { reset(); }
+}
+
+function showMsg(html, type) {
+  const el = document.getElementById('responseMsg');
+  el.className = `msg-${type} mb-4 fade-up`;
+  el.innerHTML = html; el.style.display = 'block';
+  el.scrollIntoView({ behavior:'smooth', block:'center' });
+  if (type === 'success') setTimeout(() => { el.style.display='none'; }, 8000);
+}
+function reset() {
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-send-fill"></i>Submit Complaint';
+}
+
+document.addEventListener('DOMContentLoaded', checkAuth);
+</script>
+<script src="/static/js/micro.js"></script>
+</body>
+</html>
