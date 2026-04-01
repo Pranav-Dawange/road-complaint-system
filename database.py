@@ -2,27 +2,23 @@
 database.py — MySQL connection helper for Road Complaint Management System
 
 Uses mysql-connector-python (plain connector, no ORM).
-All configuration is read from environment variables (set in .env locally
-or in the Railway dashboard when deployed).
+All configuration is centralised here so main.py stays clean.
 """
 
-import os
 import mysql.connector
 from mysql.connector import Error
-from dotenv import load_dotenv
 
-load_dotenv()  # loads .env file when running locally; no-op on Railway
 
 # ── Connection configuration ──────────────────────────────────────────────────
-# Set these in your .env file locally, or in Railway's environment variables.
+# Update these values to match your local MySQL installation.
 DB_CONFIG = {
-    "host":       os.getenv("DB_HOST", "localhost"),
-    "port":       int(os.getenv("DB_PORT", 3306)),
-    "user":       os.getenv("DB_USER", "root"),
-    "password":   os.getenv("DB_PASS", ""),
-    "database":   os.getenv("DB_NAME", "road_complaint_db"),
+    "host":     "localhost",
+    "port":     3306,
+    "user":     "root",
+    "password": "Pranav@123",
+    "database": "road_complaint_db",
     "autocommit": False,
-    "charset":    "utf8mb4",
+    "charset":  "utf8mb4",
 }
 
 
