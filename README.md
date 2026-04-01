@@ -1,6 +1,6 @@
 # 🛣️ Road Complaint Management System
 
-> A full-stack DBMS college project built with **FastAPI**, **MySQL**, and **Bootstrap 5**.
+> A full-stack DBMS project built with **FastAPI**, **MySQL**, and **Bootstrap 5**.
 > Citizens can file road-damage complaints; officers manage and resolve them through a live dashboard.
 
 ---
@@ -169,4 +169,4 @@ The API is now live at **`http://localhost:8000`**
 
 ---
 
-*Road Complaint Management System — DBMS College Project 2024*
+*Road Complaint Management System — DBMS Project 2026*
