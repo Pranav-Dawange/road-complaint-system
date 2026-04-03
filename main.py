@@ -1,5 +1,6 @@
 """
 main.py — FastAPI application for Road Complaint Management System
+BACKEND: Supabase (PostgreSQL) — migrated from MySQL
 UPGRADED: JWT Auth, Photo Upload, Email Notifications, GPS/Map, Auto-Assign
 
 Run with:  uvicorn main:app --reload
@@ -35,8 +36,8 @@ from notifications import send_notification_background
 # ── App setup ──────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Road Complaint Management System",
-    description="DBMS Project — FastAPI + MySQL (Upgraded with JWT, Geo, Analytics)",
-    version="2.0.0",
+    description="DBMS Project — FastAPI + Supabase (PostgreSQL)",
+    version="3.0.0",
 )
 
 app.add_middleware(
@@ -62,6 +63,7 @@ MAX_PHOTO_BYTES    = 5 * 1024 * 1024  # 5 MB
 # ══════════════════════════════════════════════════════════════════════════════
 # STARTUP — Create default user accounts (admin / officer1 / citizen1)
 # Passwords are bcrypt-hashed at runtime so no pre-computed hash is needed.
+# PostgreSQL change: table is app_user (USER is reserved); RETURNING user_id.
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.on_event("startup")
@@ -77,14 +79,15 @@ def create_default_users():
     ]
     for username, password, role, citizen_id, officer_id in defaults:
         existing = execute_query(
-            "SELECT user_id FROM USER WHERE username = %s",
+            "SELECT user_id FROM app_user WHERE username = %s",
             (username,), fetch=True
         )
         if not existing:
             execute_query(
                 """
-                INSERT INTO USER (username, hashed_password, role, citizen_id, officer_id)
+                INSERT INTO app_user (username, hashed_password, role, citizen_id, officer_id)
                 VALUES (%s, %s, %s, %s, %s)
+                RETURNING user_id
                 """,
                 (username, hash_password(password), role, citizen_id, officer_id)
             )
@@ -109,7 +112,7 @@ def _dt(row: dict, *keys):
 
 @app.get("/", tags=["Root"])
 def root():
-    return {"message": "Road Complaint API running", "docs": "/docs", "version": "2.0.0"}
+    return {"message": "Road Complaint API running", "docs": "/docs", "version": "3.0.0"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -145,11 +148,11 @@ def serve_map():
 def register_user(body: UserRegister):
     """
     Register a new user account.
-    SQL: INSERT INTO USER with bcrypt-hashed password.
+    SQL: INSERT INTO app_user with bcrypt-hashed password.
     Returns: {user_id, message}
     """
     existing = execute_query(
-        "SELECT user_id FROM USER WHERE username = %s",
+        "SELECT user_id FROM app_user WHERE username = %s",
         (body.username,), fetch=True
     )
     if existing:
@@ -157,8 +160,9 @@ def register_user(body: UserRegister):
 
     new_id = execute_query(
         """
-        INSERT INTO USER (username, hashed_password, role)
+        INSERT INTO app_user (username, hashed_password, role)
         VALUES (%s, %s, %s)
+        RETURNING user_id
         """,
         (body.username, hash_password(body.password), body.role.value)
     )
@@ -170,10 +174,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """
     Authenticate and return a JWT access token.
     Uses OAuth2PasswordRequestForm (username + password fields).
-    SQL: SELECT hashed_password + role FROM USER WHERE username = ?
+    SQL: SELECT hashed_password + role FROM app_user WHERE username = ?
     """
     rows = execute_query(
-        "SELECT user_id, hashed_password, role FROM USER WHERE username = %s",
+        "SELECT user_id, hashed_password, role FROM app_user WHERE username = %s",
         (form_data.username,), fetch=True
     )
     if not rows:
@@ -204,16 +208,16 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 @app.post("/citizens", status_code=201, tags=["Citizens"])
 def register_citizen(body: CitizenCreate):
-    """Register a new citizen. SQL: INSERT INTO CITIZEN."""
+    """Register a new citizen. SQL: INSERT INTO citizen."""
     existing = execute_query(
-        "SELECT citizen_id FROM CITIZEN WHERE phone = %s",
+        "SELECT citizen_id FROM citizen WHERE phone = %s",
         (body.phone,), fetch=True
     )
     if existing:
         raise HTTPException(status_code=422, detail="Phone number already registered.")
 
     new_id = execute_query(
-        "INSERT INTO CITIZEN (name, phone, email, address, ward_no) VALUES (%s,%s,%s,%s,%s)",
+        "INSERT INTO citizen (name, phone, email, address, ward_no) VALUES (%s,%s,%s,%s,%s) RETURNING citizen_id",
         (body.name, body.phone, body.email, body.address, body.ward_no)
     )
     return {"citizen_id": new_id, "message": "Citizen registered successfully"}
@@ -221,7 +225,7 @@ def register_citizen(body: CitizenCreate):
 
 @app.get("/citizens", tags=["Citizens"])
 def list_citizens():
-    return execute_query("SELECT * FROM CITIZEN ORDER BY name", fetch=True)
+    return execute_query("SELECT * FROM citizen ORDER BY name", fetch=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -246,9 +250,9 @@ def complaint_map_data(current_user: dict = Depends(get_current_user)):
             c.address, c.worker_id,
             ci.name AS citizen_name,
             w.ward_name, w.ward_id
-        FROM  COMPLAINT c
-        JOIN  CITIZEN   ci ON c.citizen_id = ci.citizen_id
-        JOIN  WARD      w  ON c.ward_id    = w.ward_id
+        FROM  complaint c
+        JOIN  citizen   ci ON c.citizen_id = ci.citizen_id
+        JOIN  ward      w  ON c.ward_id    = w.ward_id
         WHERE c.latitude  IS NOT NULL
           AND c.longitude IS NOT NULL
         ORDER BY c.filed_at DESC
@@ -274,13 +278,13 @@ def file_complaint(
     """
     File a new road-damage complaint (multipart/form-data).
     Accepts an optional photo upload (.jpg/.jpeg/.png, max 5 MB).
-    SQL: INSERT INTO COMPLAINT.
+    SQL: INSERT INTO complaint RETURNING complaint_id.
     Protected: citizen, officer, admin.
     """
     # Validate citizen and ward exist
-    if not execute_query("SELECT 1 FROM CITIZEN WHERE citizen_id=%s", (citizen_id,), fetch=True):
+    if not execute_query("SELECT 1 FROM citizen WHERE citizen_id=%s", (citizen_id,), fetch=True):
         _not_found("Citizen", citizen_id)
-    if not execute_query("SELECT 1 FROM WARD WHERE ward_id=%s", (ward_id,), fetch=True):
+    if not execute_query("SELECT 1 FROM ward WHERE ward_id=%s", (ward_id,), fetch=True):
         _not_found("Ward", ward_id)
 
     # ── Handle optional photo upload ──────────────────────────────────────────
@@ -304,10 +308,11 @@ def file_complaint(
 
     new_id = execute_query(
         """
-        INSERT INTO COMPLAINT
+        INSERT INTO complaint
             (citizen_id, ward_id, description, damage_type, severity,
              status, address, latitude, longitude, photo_path)
         VALUES (%s, %s, %s, %s, %s, 'open', %s, %s, %s, %s)
+        RETURNING complaint_id
         """,
         (citizen_id, ward_id, description, damage_type, severity,
          address, latitude, longitude, photo_path)
@@ -323,7 +328,7 @@ def list_complaints(
 ):
     """
     Get all complaints with optional status/ward filters.
-    SQL: SELECT with dynamic WHERE clauses. Joins CITIZEN + WARD.
+    SQL: SELECT with dynamic WHERE clauses. Joins citizen + ward.
     Protected: all authenticated users.
     """
     sql    = """
@@ -332,9 +337,9 @@ def list_complaints(
                c.latitude, c.longitude, c.worker_id,
                ci.name  AS citizen_name, ci.phone AS citizen_phone,
                w.ward_name
-        FROM  COMPLAINT c
-        JOIN  CITIZEN   ci ON c.citizen_id = ci.citizen_id
-        JOIN  WARD      w  ON c.ward_id    = w.ward_id
+        FROM  complaint c
+        JOIN  citizen   ci ON c.citizen_id = ci.citizen_id
+        JOIN  ward      w  ON c.ward_id    = w.ward_id
         WHERE 1=1
     """
     params = []
@@ -359,7 +364,7 @@ def get_complaint(
 ):
     """
     Get a single complaint by ID with full detail + audit log.
-    SQL: LEFT JOIN with WORKER. Separate query for COMPLAINT_LOG.
+    SQL: LEFT JOIN with worker. Separate query for complaint_log.
     Protected: all authenticated users.
     """
     rows = execute_query(
@@ -372,10 +377,10 @@ def get_complaint(
                w.ward_name, w.city,
                wo.name       AS worker_name,
                wo.skill_type AS worker_skill
-        FROM  COMPLAINT c
-        JOIN  CITIZEN   ci  ON c.citizen_id = ci.citizen_id
-        JOIN  WARD      w   ON c.ward_id    = w.ward_id
-        LEFT  JOIN WORKER wo ON c.worker_id = wo.worker_id
+        FROM  complaint c
+        JOIN  citizen   ci  ON c.citizen_id = ci.citizen_id
+        JOIN  ward      w   ON c.ward_id    = w.ward_id
+        LEFT  JOIN worker wo ON c.worker_id = wo.worker_id
         WHERE c.complaint_id = %s
         """,
         (complaint_id,), fetch=True
@@ -389,7 +394,7 @@ def get_complaint(
     logs = execute_query(
         """
         SELECT log_id, old_status, new_status, changed_by, changed_at
-        FROM   COMPLAINT_LOG
+        FROM   complaint_log
         WHERE  complaint_id = %s
         ORDER  BY changed_at ASC
         """,
@@ -409,8 +414,8 @@ def update_complaint_status(
     current_user: dict = Depends(require_role(["officer", "admin"])),
 ):
     """
-    Update complaint status. The MySQL TRIGGER fires automatically to log
-    the change in COMPLAINT_LOG. Also:
+    Update complaint status. The PostgreSQL TRIGGER fires automatically to log
+    the change in complaint_log. Also:
     - Sets resolved_at when resolved
     - Frees assigned worker when resolved
     - Queues background email notification to citizen
@@ -421,8 +426,8 @@ def update_complaint_status(
         SELECT c.complaint_id, c.status, c.worker_id,
                ci.name AS citizen_name, ci.email AS citizen_email,
                ci.citizen_id
-        FROM   COMPLAINT c
-        JOIN   CITIZEN   ci ON c.citizen_id = ci.citizen_id
+        FROM   complaint c
+        JOIN   citizen   ci ON c.citizen_id = ci.citizen_id
         WHERE  c.complaint_id = %s
         """,
         (complaint_id,), fetch=True
@@ -440,25 +445,25 @@ def update_complaint_status(
     # Update status (+ resolved_at if resolving)
     if new_st == "resolved":
         execute_query(
-            "UPDATE COMPLAINT SET status=%s, resolved_at=NOW() WHERE complaint_id=%s",
+            "UPDATE complaint SET status=%s, resolved_at=NOW() WHERE complaint_id=%s",
             (new_st, complaint_id)
         )
         # Free the assigned worker so they become available for new complaints
         if current["worker_id"]:
             execute_query(
-                "UPDATE WORKER SET is_available=TRUE WHERE worker_id=%s",
+                "UPDATE worker SET is_available=TRUE WHERE worker_id=%s",
                 (current["worker_id"],)
             )
     else:
         execute_query(
-            "UPDATE COMPLAINT SET status=%s WHERE complaint_id=%s",
+            "UPDATE complaint SET status=%s WHERE complaint_id=%s",
             (new_st, complaint_id)
         )
 
     # Manual log entry with officer name (trigger also fires with 'system_trigger')
     execute_query(
         """
-        INSERT INTO COMPLAINT_LOG (complaint_id, old_status, new_status, changed_by)
+        INSERT INTO complaint_log (complaint_id, old_status, new_status, changed_by)
         VALUES (%s, %s, %s, %s)
         """,
         (complaint_id, old_st, new_st, body.changed_by)
@@ -487,14 +492,14 @@ def assign_worker(
 ):
     """
     Manually assign a worker to a complaint.
-    SQL: UPDATE COMPLAINT SET worker_id + mark worker unavailable.
+    SQL: UPDATE complaint SET worker_id + mark worker unavailable.
     Protected: officer, admin.
     """
-    if not execute_query("SELECT 1 FROM COMPLAINT WHERE complaint_id=%s", (complaint_id,), fetch=True):
+    if not execute_query("SELECT 1 FROM complaint WHERE complaint_id=%s", (complaint_id,), fetch=True):
         _not_found("Complaint", complaint_id)
 
     worker = execute_query(
-        "SELECT worker_id, is_available FROM WORKER WHERE worker_id=%s",
+        "SELECT worker_id, is_available FROM worker WHERE worker_id=%s",
         (body.worker_id,), fetch=True
     )
     if not worker:
@@ -503,11 +508,11 @@ def assign_worker(
         raise HTTPException(status_code=422, detail="Worker is currently unavailable.")
 
     execute_query(
-        "UPDATE COMPLAINT SET worker_id=%s WHERE complaint_id=%s",
+        "UPDATE complaint SET worker_id=%s WHERE complaint_id=%s",
         (body.worker_id, complaint_id)
     )
     execute_query(
-        "UPDATE WORKER SET is_available=FALSE WHERE worker_id=%s",
+        "UPDATE worker SET is_available=FALSE WHERE worker_id=%s",
         (body.worker_id,)
     )
     return {"message": f"Worker {body.worker_id} assigned to complaint {complaint_id}"}
@@ -522,11 +527,12 @@ def auto_assign_worker(
     Auto-assign the nearest available worker using the Haversine formula.
     SQL: Calculates great-circle distance for workers in the same ward,
          orders by distance_km ASC, LIMIT 1.
+    PostgreSQL change: ACOS → acos, RADIANS → radians, LEAST → LEAST (same).
     Protected: officer, admin.
     """
     # Fetch complaint location and ward
     comp = execute_query(
-        "SELECT latitude, longitude, ward_id FROM COMPLAINT WHERE complaint_id=%s",
+        "SELECT latitude, longitude, ward_id FROM complaint WHERE complaint_id=%s",
         (complaint_id,), fetch=True
     )
     if not comp:
@@ -540,15 +546,16 @@ def auto_assign_worker(
     lng = c["longitude"]
 
     # Haversine query — finds nearest available worker in same ward
+    # PostgreSQL trig functions are lowercase; LEAST works the same
     workers = execute_query(
         """
         SELECT worker_id, name,
-          (6371 * ACOS(
-            LEAST(1.0, COS(RADIANS(%s)) * COS(RADIANS(base_latitude)) *
-            COS(RADIANS(base_longitude) - RADIANS(%s)) +
-            SIN(RADIANS(%s)) * SIN(RADIANS(base_latitude)))
+          (6371 * acos(
+            LEAST(1.0, cos(radians(%s)) * cos(radians(base_latitude)) *
+            cos(radians(base_longitude) - radians(%s)) +
+            sin(radians(%s)) * sin(radians(base_latitude)))
           )) AS distance_km
-        FROM WORKER
+        FROM worker
         WHERE ward_id     = %s
           AND is_available = TRUE
           AND base_latitude IS NOT NULL
@@ -564,11 +571,11 @@ def auto_assign_worker(
     dist   = round(float(worker["distance_km"]), 2)
 
     execute_query(
-        "UPDATE COMPLAINT SET worker_id=%s, status='in_progress' WHERE complaint_id=%s",
+        "UPDATE complaint SET worker_id=%s, status='in_progress' WHERE complaint_id=%s",
         (worker["worker_id"], complaint_id)
     )
     execute_query(
-        "UPDATE WORKER SET is_available=FALSE WHERE worker_id=%s",
+        "UPDATE worker SET is_available=FALSE WHERE worker_id=%s",
         (worker["worker_id"],)
     )
 
@@ -591,7 +598,7 @@ def list_wards():
         """
         SELECT w.ward_id, w.ward_name, w.city,
                o.name AS officer_name, o.designation
-        FROM   WARD w LEFT JOIN OFFICER o ON w.officer_id = o.officer_id
+        FROM   ward w LEFT JOIN officer o ON w.officer_id = o.officer_id
         ORDER  BY w.ward_id
         """,
         fetch=True
@@ -604,18 +611,19 @@ def ward_summary(
     current_user: dict = Depends(require_role(["officer", "admin"])),
 ):
     """
-    Calls stored procedure GetWardSummary(ward_id).
+    Calls PostgreSQL function get_ward_summary(ward_id).
+    (Converted from MySQL stored procedure GetWardSummary)
     Returns: total / open / in_progress / resolved counts.
     Protected: officer, admin.
     """
     ward = execute_query(
-        "SELECT ward_id, ward_name FROM WARD WHERE ward_id=%s",
+        "SELECT ward_id, ward_name FROM ward WHERE ward_id=%s",
         (ward_id,), fetch=True
     )
     if not ward:
         _not_found("Ward", ward_id)
 
-    results = call_procedure("GetWardSummary", (ward_id,))
+    results = call_procedure("get_ward_summary", (ward_id,))
     if not results:
         return {"ward_id": ward_id, "message": "No data"}
 
@@ -640,7 +648,7 @@ def list_workers():
         """
         SELECT w.worker_id, w.name, w.phone, w.skill_type, w.is_available,
                w.base_latitude, w.base_longitude, wd.ward_name
-        FROM   WORKER w LEFT JOIN WARD wd ON w.ward_id = wd.ward_id
+        FROM   worker w LEFT JOIN ward wd ON w.ward_id = wd.ward_id
         ORDER  BY w.worker_id
         """,
         fetch=True
@@ -649,6 +657,10 @@ def list_workers():
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ANALYTICS (all protected: admin only)
+# PostgreSQL changes:
+#   DATEDIFF(NOW(), col) → EXTRACT(EPOCH FROM (NOW() - col)) / 86400
+#   DATE_FORMAT(col, '%Y-%m') → TO_CHAR(col, 'YYYY-MM')
+#   SUM(CASE…) → COUNT(*) FILTER (WHERE …)  [cleaner PostgreSQL idiom]
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/analytics/ward-summary", tags=["Analytics"])
@@ -657,18 +669,17 @@ def analytics_ward_summary(
 ):
     """
     Ward-wise complaint counts grouped by status.
-    SQL: COUNT with CASE WHEN aggregation grouped by ward.
     Protected: admin.
     """
     return execute_query(
         """
         SELECT
             w.ward_id, w.ward_name,
-            COUNT(c.complaint_id)                                      AS total,
-            SUM(CASE WHEN c.status='open'        THEN 1 ELSE 0 END)   AS open,
-            SUM(CASE WHEN c.status='in_progress' THEN 1 ELSE 0 END)   AS in_progress,
-            SUM(CASE WHEN c.status='resolved'    THEN 1 ELSE 0 END)   AS resolved
-        FROM  WARD w LEFT JOIN COMPLAINT c ON w.ward_id = c.ward_id
+            COUNT(c.complaint_id)                                           AS total,
+            COUNT(c.complaint_id) FILTER (WHERE c.status = 'open')         AS open,
+            COUNT(c.complaint_id) FILTER (WHERE c.status = 'in_progress')  AS in_progress,
+            COUNT(c.complaint_id) FILTER (WHERE c.status = 'resolved')     AS resolved
+        FROM  ward w LEFT JOIN complaint c ON w.ward_id = c.ward_id
         GROUP BY w.ward_id, w.ward_name
         ORDER BY w.ward_id
         """,
@@ -682,7 +693,7 @@ def analytics_sla_breach(
 ):
     """
     Complaints open for more than 7 days (SLA breach).
-    SQL: WHERE status != 'resolved' AND DATEDIFF > 7.
+    PostgreSQL: DATEDIFF → EXTRACT(EPOCH FROM age(NOW(), filed_at))/86400
     Protected: admin.
     """
     rows = execute_query(
@@ -691,13 +702,13 @@ def analytics_sla_breach(
                ci.name  AS citizen_name, ci.phone,
                w.ward_name, c.damage_type, c.severity,
                c.filed_at,
-               DATEDIFF(NOW(), c.filed_at) AS days_pending,
+               FLOOR(EXTRACT(EPOCH FROM (NOW() - c.filed_at)) / 86400)::INT AS days_pending,
                c.address
-        FROM  COMPLAINT c
-        JOIN  CITIZEN   ci ON c.citizen_id = ci.citizen_id
-        JOIN  WARD      w  ON c.ward_id    = w.ward_id
-        WHERE c.status != 'resolved'
-          AND DATEDIFF(NOW(), c.filed_at) > 7
+        FROM  complaint c
+        JOIN  citizen   ci ON c.citizen_id = ci.citizen_id
+        JOIN  ward      w  ON c.ward_id    = w.ward_id
+        WHERE c.status <> 'resolved'
+          AND (NOW() - c.filed_at) > INTERVAL '7 days'
         ORDER BY days_pending DESC
         """,
         fetch=True
@@ -713,15 +724,15 @@ def analytics_monthly_trend(
 ):
     """
     Monthly complaint filing counts for the last 6 months.
-    SQL: DATE_FORMAT grouped aggregation, LIMIT 6, DESC order.
+    PostgreSQL: DATE_FORMAT → TO_CHAR; GROUP BY the expression alias.
     Protected: admin.
     """
     return execute_query(
         """
-        SELECT DATE_FORMAT(filed_at, '%Y-%m') AS month,
-               COUNT(*)                        AS count
-        FROM   COMPLAINT
-        GROUP  BY DATE_FORMAT(filed_at, '%Y-%m')
+        SELECT TO_CHAR(filed_at, 'YYYY-MM') AS month,
+               COUNT(*)                     AS count
+        FROM   complaint
+        GROUP  BY TO_CHAR(filed_at, 'YYYY-MM')
         ORDER  BY month DESC
         LIMIT  6
         """,
@@ -735,15 +746,14 @@ def analytics_damage_breakdown(
 ):
     """
     Count and percentage of complaints per damage type.
-    SQL: Subquery for total used in percentage calculation.
     Protected: admin.
     """
     return execute_query(
         """
         SELECT damage_type,
-               COUNT(*)                                                     AS count,
-               ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM COMPLAINT), 1) AS percentage
-        FROM   COMPLAINT
+               COUNT(*)                                                           AS count,
+               ROUND(COUNT(*) * 100.0 / NULLIF((SELECT COUNT(*) FROM complaint), 0), 1) AS percentage
+        FROM   complaint
         GROUP  BY damage_type
         ORDER  BY count DESC
         """,
@@ -757,21 +767,22 @@ def analytics_resolution_rate(
 ):
     """
     Per-ward resolution rate and average days to resolve.
-    SQL: Conditional AVG with DATEDIFF to calculate resolution speed.
+    PostgreSQL: DATEDIFF(resolved_at, filed_at) →
+                EXTRACT(EPOCH FROM (resolved_at - filed_at)) / 86400
     Protected: admin.
     """
     return execute_query(
         """
         SELECT w.ward_name,
-               COUNT(c.complaint_id)                                              AS total,
-               SUM(CASE WHEN c.status='resolved' THEN 1 ELSE 0 END)              AS resolved_count,
+               COUNT(c.complaint_id)                                                AS total,
+               COUNT(c.complaint_id) FILTER (WHERE c.status = 'resolved')           AS resolved_count,
                ROUND(AVG(
-                 CASE WHEN c.status='resolved'
-                      THEN DATEDIFF(c.resolved_at, c.filed_at)
+                 CASE WHEN c.status = 'resolved'
+                      THEN EXTRACT(EPOCH FROM (c.resolved_at - c.filed_at)) / 86400.0
                  END
-               ), 1)                                                              AS avg_days_to_resolve
-        FROM   COMPLAINT c
-        JOIN   WARD      w ON c.ward_id = w.ward_id
+               )::NUMERIC, 1)                                                       AS avg_days_to_resolve
+        FROM   complaint c
+        JOIN   ward      w ON c.ward_id = w.ward_id
         GROUP  BY w.ward_name
         ORDER  BY w.ward_name
         """,
@@ -780,12 +791,12 @@ def analytics_resolution_rate(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ACTIVE COMPLAINTS VIEW (queries the MySQL VIEW directly)
+# ACTIVE COMPLAINTS VIEW (queries the PostgreSQL VIEW directly)
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/active-complaints", tags=["Complaints"])
 def active_complaints_view(current_user: dict = Depends(get_current_user)):
-    """Query the MySQL VIEW active_complaints_view. Protected: all authenticated."""
+    """Query the PostgreSQL VIEW active_complaints_view. Protected: all authenticated."""
     rows = execute_query(
         "SELECT * FROM active_complaints_view ORDER BY filed_at DESC",
         fetch=True

@@ -34,8 +34,9 @@ def log_notification(complaint_id: int, citizen_id: int, message: str) -> int:
     """
     notification_id = execute_query(
         """
-        INSERT INTO NOTIFICATION (complaint_id, citizen_id, message, is_sent)
+        INSERT INTO notification (complaint_id, citizen_id, message, is_sent)
         VALUES (%s, %s, %s, FALSE)
+        RETURNING notification_id
         """,
         (complaint_id, citizen_id, message)
     )
@@ -141,8 +142,8 @@ def send_notification_background(
     if to_email:
         send_status_email(to_email, citizen_name, complaint_id, old_status, new_status)
 
-    # 3. Mark as sent in the NOTIFICATION table
+    # 3. Mark as sent in the notification table
     execute_query(
-        "UPDATE NOTIFICATION SET is_sent = TRUE WHERE notification_id = %s",
+        "UPDATE notification SET is_sent = TRUE WHERE notification_id = %s",
         (notification_id,)
     )

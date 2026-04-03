@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-mysql-connector-python
+psycopg2-binary
 pydantic
 python-jose[cryptography]
 passlib[bcrypt]
