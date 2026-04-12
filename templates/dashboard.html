@@ -624,7 +624,7 @@ function renderTable(data) {
 
   tbody.innerHTML = data.map((c,i) => {
     const thumb = c.photo_path
-      ? `<img src="${API}/static/${c.photo_path}" class="thumb" title="Click to view" onclick="openModal('${API}/static/${c.photo_path}')" />`
+      ? `<img src="${API}/photos/${c.photo_path}" class="thumb" title="Click to view" onclick="openModal('${API}/photos/${c.photo_path}')" />`
       : `<span style="color:var(--text-muted);">—</span>`;
 
     const canManage = user.role==='officer'||user.role==='admin';

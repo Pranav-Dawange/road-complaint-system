@@ -13,6 +13,10 @@ import time
 import shutil
 from typing import Optional
 
+from pymongo import MongoClient
+import gridfs
+from bson.objectid import ObjectId
+
 from fastapi import (
     FastAPI, HTTPException, Query, Depends, BackgroundTasks,
     Form, File, UploadFile, status
@@ -58,6 +62,17 @@ TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 MAX_PHOTO_BYTES    = 5 * 1024 * 1024  # 5 MB
+
+# ── MongoDB Setup ──────────────────────────────────────────────────────────────
+from dotenv import load_dotenv
+load_dotenv()
+MONGO_URI = os.getenv("MONGO_URI")
+if MONGO_URI:
+    mongo_client = MongoClient(MONGO_URI)
+    mongo_db = mongo_client["road_complaints"]
+    fs = gridfs.GridFS(mongo_db)
+else:
+    fs = None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -113,6 +128,32 @@ def _dt(row: dict, *keys):
 @app.get("/", tags=["Root"])
 def root():
     return {"message": "Road Complaint API running", "docs": "/docs", "version": "3.0.0"}
+
+
+from fastapi.responses import StreamingResponse, FileResponse
+import gridfs.errors
+
+@app.get("/photos/{photo_id:path}", tags=["Photos"])
+def get_photo(photo_id: str):
+    """
+    Fetch photo from MongoDB GridFS.
+    Fallback to local /static/uploads if it's an old local photo path.
+    """
+    # Fix for subpath resolution like "uploads/xyz.jpg"
+    if "/" in photo_id or not ObjectId.is_valid(photo_id):
+        local_path = os.path.join(STATIC_DIR, photo_id)
+        if os.path.exists(local_path):
+            return FileResponse(local_path)
+        raise HTTPException(status_code=404, detail="Photo not found")
+    
+    if fs is None:
+        raise HTTPException(status_code=500, detail="MongoDB not configured")
+
+    try:
+        grid_out = fs.get(ObjectId(photo_id))
+        return StreamingResponse(grid_out, media_type=grid_out.content_type)
+    except gridfs.errors.NoFile:
+        raise HTTPException(status_code=404, detail="Photo not found in MongoDB")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -299,12 +340,17 @@ def file_complaint(
         if len(content) > MAX_PHOTO_BYTES:
             raise HTTPException(status_code=422, detail="Photo must be smaller than 5 MB.")
 
-        # Save with timestamp prefix to avoid filename collisions
-        filename  = f"{int(time.time())}_{photo.filename}"
-        save_path = os.path.join(UPLOAD_DIR, filename)
-        with open(save_path, "wb") as f:
-            f.write(content)
-        photo_path = f"uploads/{filename}"   # relative to /static/
+        if fs:
+            # Save to MongoDB GridFS
+            file_id = fs.put(content, filename=photo.filename, content_type=photo.content_type)
+            photo_path = str(file_id)
+        else:
+            # Fallback local save if MongoDB isn't configured
+            filename  = f"{int(time.time())}_{photo.filename}"
+            save_path = os.path.join(UPLOAD_DIR, filename)
+            with open(save_path, "wb") as f:
+                f.write(content)
+            photo_path = f"uploads/{filename}"   # relative to /static/
 
     new_id = execute_query(
         """

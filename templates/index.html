@@ -571,6 +571,24 @@ async function submitComplaint() {
   }
   if (photoFile && photoFile.size > 5*1024*1024) { showMsg('Photo exceeds 5 MB.', 'danger'); reset(); return; }
 
+  // Validations
+  if (!citizenIdRaw) {
+    if (!name || !phone) { showMsg('Enter your Name and Phone, or existing Citizen ID.', 'danger'); reset(); return; }
+    
+    // Mobile number validation: exactly 10 digits and not all zeroes
+    const phoneRegex = /^[1-9]\d{9}$/;
+    if (phone === '0000000000' || !/^\d{10}$/.test(phone) || !phoneRegex.test(phone)) {
+      showMsg('<i class="bi bi-exclamation-circle me-2"></i>Enter a valid 10-digit mobile number.', 'danger');
+      reset(); return;
+    }
+
+    // Email validation
+    if (email && !email.includes('@')) {
+      showMsg('<i class="bi bi-exclamation-circle me-2"></i>Enter a valid email address containing "@".', 'danger');
+      reset(); return;
+    }
+  }
+
   try {
     let citizen_id = parseInt(citizenIdRaw) || null;
     if (!citizen_id) {
