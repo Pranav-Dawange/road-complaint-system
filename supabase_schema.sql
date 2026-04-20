@@ -289,7 +289,17 @@ INSERT INTO ward (ward_name, city, officer_id) VALUES
 ('Kothrud',      'Pune', 2),
 ('Hadapsar',     'Pune', 3),
 ('Warje',        'Pune', 4),
-('Aundh',        'Pune', 5);
+('Aundh',        'Pune', 5),
+('Yerwada',      'Pune', 1),
+('Kasba Peth',   'Pune', 2),
+('Bhavani Peth', 'Pune', 3),
+('Wanwadi',      'Pune', 4),
+('Kondhwa',      'Pune', 5),
+('Dhankawadi',   'Pune', 1),
+('Sahakarnagar', 'Pune', 2),
+('Tilak Road',   'Pune', 3),
+('Baner',        'Pune', 4),
+('Viman Nagar',  'Pune', 5);
 
 -- Link officers back to their wards
 UPDATE officer SET ward_id = 1 WHERE officer_id = 1;
