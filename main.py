@@ -31,7 +31,8 @@ from fastapi.staticfiles import StaticFiles
 from database import execute_query, call_procedure
 from models import (
     CitizenCreate, StatusUpdate, WorkerAssign,
-    UserRegister, ComplaintStatus
+    UserRegister, ComplaintStatus,
+    ComplaintFeedbackSubmit, ResourceUsageSubmit, PublicAdvisoryCreate
 )
 from auth import (
     hash_password, verify_password,
@@ -1148,3 +1149,129 @@ def download_complaint_report(complaint_id: int):
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NEW UPGRADES: FEEDBACK, RESOURCES, ADVISORIES
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Advisories ────────────────────────────────────────────────────────────────
+
+@app.get("/advisories", tags=["Advisories"])
+def get_active_advisories():
+    """Fetch all active public advisories."""
+    rows = execute_query(
+        """
+        SELECT a.advisory_id, a.title, a.message, a.ward_id, a.valid_until, a.created_at,
+               w.ward_name, o.name AS officer_name
+        FROM public_advisory a
+        LEFT JOIN ward w ON a.ward_id = w.ward_id
+        LEFT JOIN officer o ON a.officer_id = o.officer_id
+        WHERE a.valid_until > NOW()
+        ORDER BY a.created_at DESC
+        """,
+        fetch=True
+    )
+    for r in rows:
+        _dt(r, "valid_until", "created_at")
+    return rows
+
+
+@app.post("/advisories", status_code=201, tags=["Advisories"])
+def create_advisory(
+    body: PublicAdvisoryCreate,
+    current_user: dict = Depends(require_role(["officer", "admin"]))
+):
+    """Create a new public advisory. Protected: officer/admin."""
+    # current_user['user_id'] is in app_user, need to get their officer_id
+    usr = execute_query("SELECT officer_id FROM app_user WHERE user_id = %s", (current_user["user_id"],), fetch=True)
+    if not usr or not usr[0]["officer_id"]:
+        # Fallback to officer ID 1 if admin doesn't have an officer profile bound
+        officer_id = 1
+    else:
+        officer_id = usr[0]["officer_id"]
+
+    new_id = execute_query(
+        """
+        INSERT INTO public_advisory (ward_id, officer_id, title, message, valid_until)
+        VALUES (%s, %s, %s, %s, NOW() + INTERVAL '%s days')
+        RETURNING advisory_id
+        """,
+        (body.ward_id, officer_id, body.title, body.message, body.valid_days)
+    )
+    return {"advisory_id": new_id, "message": "Advisory posted successfully."}
+
+
+# ── Feedback ──────────────────────────────────────────────────────────────────
+
+@app.post("/complaints/{complaint_id}/feedback", tags=["Feedback"])
+def submit_complaint_feedback(
+    complaint_id: int,
+    body: ComplaintFeedbackSubmit,
+    current_user: dict = Depends(get_current_user)
+):
+    """Citizen submits 1-5 star feedback for a resolved complaint."""
+    # Verify it is resolved
+    comp = execute_query("SELECT status FROM complaint WHERE complaint_id=%s", (complaint_id,), fetch=True)
+    if not comp: _not_found("Complaint", complaint_id)
+    if comp[0]["status"] != "resolved":
+        raise HTTPException(status_code=400, detail="Cannot submit feedback for a non-resolved complaint.")
+
+    execute_query(
+        """
+        INSERT INTO complaint_feedback (complaint_id, rating, comments, submitted_at)
+        VALUES (%s, %s, %s, NOW())
+        ON CONFLICT (complaint_id) DO UPDATE SET
+            rating = EXCLUDED.rating,
+            comments = EXCLUDED.comments,
+            submitted_at = NOW()
+        """,
+        (complaint_id, body.rating, body.comments)
+    )
+    return {"message": "Feedback submitted successfully."}
+
+
+@app.get("/complaints/{complaint_id}/feedback", tags=["Feedback"])
+def get_complaint_feedback(complaint_id: int):
+    """Get feedback for a specific complaint."""
+    rows = execute_query(
+        "SELECT * FROM complaint_feedback WHERE complaint_id = %s",
+        (complaint_id,), fetch=True
+    )
+    if not rows: return None
+    _dt(rows[0], "submitted_at")
+    return rows[0]
+
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+
+@app.post("/complaints/{complaint_id}/resources", status_code=201, tags=["Resources"])
+def add_resource_usage(
+    complaint_id: int,
+    body: ResourceUsageSubmit,
+    current_user: dict = Depends(require_role(["officer", "admin"]))
+):
+    """Log municipal resources used natively for the complaint."""
+    if not execute_query("SELECT 1 FROM complaint WHERE complaint_id=%s", (complaint_id,), fetch=True):
+        _not_found("Complaint", complaint_id)
+
+    new_id = execute_query(
+        """
+        INSERT INTO resource_usage (complaint_id, material_name, quantity, unit, cost_estimate)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING usage_id
+        """,
+        (complaint_id, body.material_name, body.quantity, body.unit, body.cost_estimate)
+    )
+    return {"usage_id": new_id, "message": "Resource usage logged successfully."}
+
+
+@app.get("/complaints/{complaint_id}/resources", tags=["Resources"])
+def get_complaint_resources(complaint_id: int):
+    """Fetch all resources used to resolve this complaint."""
+    rows = execute_query(
+        "SELECT * FROM resource_usage WHERE complaint_id = %s ORDER BY logged_at ASC",
+        (complaint_id,), fetch=True
+    )
+    for r in rows: _dt(r, "logged_at")
+    return rows

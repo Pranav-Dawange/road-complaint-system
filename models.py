@@ -88,3 +88,22 @@ class LoginResponse(BaseModel):
     role:         str
     username:     str
     user_id:      int
+
+
+# ── New models for Feedback, Resources, Advisories ────────────────────────────
+
+class ComplaintFeedbackSubmit(BaseModel):
+    rating:   int
+    comments: Optional[str] = None
+
+class ResourceUsageSubmit(BaseModel):
+    material_name: str
+    quantity:      float
+    unit:          str
+    cost_estimate: Optional[float] = None
+
+class PublicAdvisoryCreate(BaseModel):
+    ward_id:    Optional[int] = None
+    title:      str
+    message:    str
+    valid_days: int = 7

@@ -95,6 +95,9 @@
 
   <div class="container pb-5" style="max-width:680px;">
 
+    <!-- Advisories Banner -->
+    <div id="advisoriesBanner" class="mb-4 fade-up" style="display:none;"></div>
+
     <!-- Response message -->
     <div id="responseMsg" class="mb-4 fade-up"></div>
 
@@ -517,12 +520,36 @@ async function doSignup(role) {
   }
 }
 
+async function loadAdvisories() {
+  try {
+    const res = await fetch(`${API}/advisories`);
+    const data = await res.json();
+    if (data && data.length > 0) {
+      let html = `<h5 style="color:var(--text-primary);" class="mb-3"><i class="bi bi-megaphone-fill text-warning me-2"></i>Public Advisories</h5>`;
+      data.forEach(a => {
+        html += `
+          <div class="glass-card p-3 mb-2" style="border-left: 4px solid var(--warning);">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <strong style="color:var(--text-primary); font-size:1.05rem;">${a.title}</strong>
+              <small style="color:var(--text-muted); background:rgba(255,255,255,0.05); padding:2px 8px; border-radius:12px;">${a.ward_name || 'City-wide'}</small>
+            </div>
+            <p style="margin: 0; font-size:.9rem; color:var(--text-muted);">${a.message}</p>
+          </div>
+        `;
+      });
+      const banner = document.getElementById('advisoriesBanner');
+      banner.innerHTML = html;
+      banner.style.display = 'block';
+    }
+  } catch(e) { console.error("Error loading advisories", e); }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('tab') === 'signup') {
-    // switchTab expects an element unless provided null
     switchTab('signup', null);
   }
+  loadAdvisories();
 });
 
 /* ── Drag & Drop Photo ───────────────────────────────────── */

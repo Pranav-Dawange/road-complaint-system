@@ -105,6 +105,69 @@
 <!-- Toast container -->
 <div id="toastBox"></div>
 
+<!-- Advisory Modal -->
+<div id="advisoryModal" style="display:none; position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.8); backdrop-filter:blur(4px); align-items:center; justify-content:center;">
+    <div class="glass-card p-4 mx-3" style="width:100%; max-width:500px; position:relative;">
+        <button class="close-btn position-absolute" style="top:15px; right:15px; background:rgba(255,255,255,.1); color:#fff; border:none; height:32px; width:32px; border-radius:50%;" onclick="document.getElementById('advisoryModal').style.display='none'">X</button>
+        <h5 class="mb-3" style="color:var(--text-primary);"><i class="bi bi-megaphone-fill text-warning me-2"></i>Post Public Advisory</h5>
+        <div class="mb-3">
+           <label class="form-label-custom">Title</label>
+           <input type="text" id="advTitle" class="glass-input" />
+        </div>
+        <div class="mb-3">
+           <label class="form-label-custom">Message</label>
+           <textarea id="advMessage" class="glass-input" rows="3"></textarea>
+        </div>
+        <div class="row g-2 mb-3">
+           <div class="col-6">
+               <label class="form-label-custom">Ward ID (optional)</label>
+               <input type="number" id="advWard" class="glass-input" placeholder="e.g. 1" min="1" />
+           </div>
+           <div class="col-6">
+               <label class="form-label-custom">Valid Days</label>
+               <input type="number" id="advDays" class="glass-input" value="7" min="1" />
+           </div>
+        </div>
+        <button class="btn-grad w-100" style="padding:10px;justify-content:center;" onclick="postAdvisory()">Post Advisory</button>
+    </div>
+</div>
+
+<!-- Complaint Details / Feedback / Resources Modal -->
+<div id="detailsModal" style="display:none; position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.8); backdrop-filter:blur(4px); align-items:center; justify-content:center;">
+    <div class="glass-card p-4 mx-3" style="width:100%; max-width:600px; position:relative; max-height:90vh; overflow-y:auto;">
+        <button class="close-btn position-absolute" style="top:15px; right:15px; background:rgba(255,255,255,.1); color:#fff; border:none; height:32px; width:32px; border-radius:50%;" onclick="document.getElementById('detailsModal').style.display='none'">X</button>
+        <h5 class="mb-3" style="color:var(--text-primary);">Complaint #<span id="detIdText"></span></h5>
+        
+        <div id="detailsContent" style="color:var(--text-muted); font-size:0.9rem; margin-bottom:15px;"></div>
+        
+        <!-- Feedback Form (Citizen only, when resolved) -->
+        <div id="feedbackFormSection" style="display:none; background:rgba(255,255,255,0.05); padding:15px; border-radius:10px; margin-bottom:15px; border-left:4px solid var(--success);">
+            <h6 style="color:var(--success);">Submit Feedback</h6>
+            <div class="d-flex align-items-center mb-2">
+                <span class="me-2 text-light" style="font-size:0.9rem;">Rating (1-5):</span>
+                <input type="number" id="fbRating" class="glass-input px-2 py-1" style="width:80px;" min="1" max="5" value="5" />
+            </div>
+            <textarea id="fbComments" class="glass-input mb-2 py-2" rows="2" placeholder="Comments..."></textarea>
+            <button class="btn-sm-success w-100" onclick="submitFeedback()"><i class="bi bi-star-fill me-1"></i>Submit</button>
+        </div>
+
+        <!-- Resources Viewer & Form (Officer only) -->
+        <div id="resourcesSection" style="display:none; background:rgba(255,255,255,0.05); padding:15px; border-radius:10px; border-left:4px solid var(--warning);">
+            <h6 style="color:var(--warning);">Resource Usage</h6>
+            <div id="resourcesList" class="mb-3" style="font-size:0.85rem; color:var(--text-primary);"></div>
+            
+            <div id="resourceForm" style="display:flex; gap:6px; flex-wrap:wrap; align-items:end;">
+                <div style="flex:1;min-width:100px;"><input type="text" id="resName" class="glass-input px-2 py-1" placeholder="Material" /></div>
+                <div style="width:70px;"><input type="number" id="resQty" class="glass-input px-2 py-1" placeholder="Qty" /></div>
+                <div style="width:60px;"><input type="text" id="resUnit" class="glass-input px-2 py-1" placeholder="kg" /></div>
+                <div style="width:80px;"><input type="number" id="resCost" class="glass-input px-2 py-1" placeholder="₹ Cost" /></div>
+                <button class="btn-sm-warning" onclick="addResource()" style="padding:6px 12px;"><i class="bi bi-plus-lg"></i></button>
+            </div>
+        </div>
+        
+    </div>
+</div>
+
 <!-- Navbar -->
 <nav class="navbar navbar-expand-lg navbar-glass">
   <div class="container px-3">
@@ -228,10 +291,13 @@
   <div class="container-fluid px-4 pt-4 pb-2">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
       <div>
-        <h4 class="gradient-text mb-0" style="font-size:1.6rem;">Officer Dashboard</h4>
+        <h4 id="dashTitle" class="gradient-text mb-0" style="font-size:1.6rem;">Dashboard</h4>
         <p style="color:var(--text-muted);font-size:.83rem;margin:2px 0 0;">Manage road complaints across all wards</p>
       </div>
-      <button class="btn-glass" onclick="loadComplaints()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+      <div class="d-flex gap-2">
+        <button id="postAdvBtn" class="btn-glass text-warning" style="display:none;" onclick="document.getElementById('advisoryModal').style.display='flex'"><i class="bi bi-megaphone-fill me-1"></i>Post Advisory</button>
+        <button class="btn-glass" onclick="loadComplaints()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+      </div>
     </div>
   </div>
 
@@ -581,6 +647,14 @@ function init() {
     document.getElementById('navUser').innerHTML =
       `<span style="background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.15);border-radius:999px;padding:4px 14px;color:var(--text-primary);font-size:.8rem;">${user.username} <span style="color:var(--accent);">(${user.role})</span></span>
        <button class="btn-glass ms-2" style="padding:5px 12px;font-size:.8rem;" onclick="logout()"><i class="bi bi-box-arrow-right me-1"></i>Logout</button>`;
+       
+    if (user.role === 'officer' || user.role === 'admin') {
+      document.getElementById('postAdvBtn').style.display = 'block';
+      document.getElementById('dashTitle').innerText = 'Officer Dashboard';
+    } else {
+      document.getElementById('postAdvBtn').style.display = 'none';
+      document.getElementById('dashTitle').innerText = 'Citizen Dashboard';
+    }
   }
   loadComplaints();
 }
@@ -654,10 +728,11 @@ function renderTable(data) {
       <td>${thumb}</td>
       <td>
         <div style="display:flex;gap:5px;flex-wrap:wrap;">
+          <button style="background:rgba(6,182,212,0.15);border:1px solid rgba(6,182,212,0.3);color:var(--accent);border-radius:6px;padding:3px 8px;font-size:0.8rem;" onclick="openComplaintDetails(${c.complaint_id})"><i class="bi bi-info-circle me-1"></i>Details</button>
           ${canManage && c.status==='open' ? `<button class="btn-sm-warning" onclick="updateStatus(${c.complaint_id},'in_progress')"><i class="bi bi-gear-fill me-1"></i>Progress</button>` : ''}
           ${canManage && notResolved       ? `<button class="btn-sm-success" onclick="updateStatus(${c.complaint_id},'resolved')"><i class="bi bi-check-lg me-1"></i>Resolve</button>` : ''}
           ${canManage && notResolved       ? `<button class="btn-sm-primary" onclick="autoAssign(${c.complaint_id})"><i class="bi bi-robot me-1"></i>Assign</button>` : ''}
-          ${!notResolved ? `<span style="color:var(--success);font-size:.78rem;"><i class="bi bi-check-circle-fill me-1"></i>Done</span>` : ''}
+          ${!notResolved && canManage ? `<span style="color:var(--success);font-size:.78rem;"><i class="bi bi-check-circle-fill me-1"></i>Done</span>` : ''}
         </div>
       </td>
     </tr>`;
@@ -705,6 +780,155 @@ function openModal(src) {
 }
 function closeModal() { document.getElementById('imgModal').classList.remove('show'); }
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+
+
+/* ── Modal Integration (Advisory, Details, Resources, Feedback) ── */
+async function postAdvisory() {
+  const title = document.getElementById('advTitle').value.trim();
+  const message = document.getElementById('advMessage').value.trim();
+  const wardId = document.getElementById('advWard').value;
+  const days = document.getElementById('advDays').value || 7;
+  
+  if (!title || !message) return toast('Fill title and message', 'danger');
+  
+  try {
+    const res = await fetch(`${API}/advisories`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ title, message, ward_id: wardId ? parseInt(wardId) : null, valid_days: parseInt(days) })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    toast('Advisory posted!');
+    document.getElementById('advisoryModal').style.display='none';
+    document.getElementById('advTitle').value = '';
+    document.getElementById('advMessage').value = '';
+  } catch(e) { toast('Error: ' + e.message, 'danger'); }
+}
+
+let activeComplaintId = null;
+
+async function openComplaintDetails(id) {
+  activeComplaintId = id;
+  const user = JSON.parse(localStorage.getItem('rcms_user')||'{}');
+  const row = _allRows.find(c => c.complaint_id === id);
+  if (!row) return;
+
+  document.getElementById('detIdText').innerText = id;
+  document.getElementById('detailsContent').innerHTML = `
+    <strong>Citizen:</strong> ${row.citizen_name} (${row.citizen_phone})<br/>
+    <strong>Ward:</strong> ${row.ward_name}<br/>
+    <strong>Type:</strong> ${row.damage_type}<br/>
+    <strong>Severity:</strong> <span class="badge-${row.severity}">${row.severity}</span><br/>
+    <strong>Status:</strong> <span class="st-badge badge-${row.status}">${row.status.replace('_',' ')}</span><br/>
+    <strong>Filed:</strong> ${fmtDate(row.filed_at)}<br/>
+    <strong>Description:</strong> ${row.description || '—'}<br/>
+    <strong>Resolved At:</strong> ${row.resolved_at ? fmtDate(row.resolved_at) : '—'}
+  `;
+
+  const fbForm = document.getElementById('feedbackFormSection');
+  const resSec = document.getElementById('resourcesSection');
+  fbForm.style.display = 'none';
+  resSec.style.display = 'none';
+
+  if (row.status === 'resolved') {
+    if (user.role === 'citizen') {
+        fbForm.style.display = 'block';
+    } 
+  }
+  
+  if (user.role === 'admin' || user.role === 'officer') {
+      resSec.style.display = 'block';
+  }
+
+  // Also fetch existing resources and feedback if applicable
+  await loadComplaintResources(id);
+  await loadFeedback(id);
+
+  document.getElementById('detailsModal').style.display = 'flex';
+}
+
+async function loadComplaintResources(id) {
+  const user = JSON.parse(localStorage.getItem('rcms_user')||'{}');
+  const list = document.getElementById('resourcesList');
+  list.innerHTML = '<i>Loading resources...</i>';
+  try {
+    const res = await fetch(`${API}/complaints/${id}/resources`, { headers: authHeaders() });
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    if (!data || !data.length) {
+      list.innerHTML = '<i>No resources logged.</i>';
+    } else {
+      let h = '<ul class="mb-0 ps-3">';
+      data.forEach(r => {
+        h += `<li>${r.quantity} ${r.unit} of <strong>${r.material_name}</strong> (₹${r.cost_estimate||'0'})</li>`;
+      });
+      h += '</ul>';
+      list.innerHTML = h;
+    }
+  } catch(e) { list.innerHTML = ''; }
+}
+
+async function addResource() {
+  const name = document.getElementById('resName').value.trim();
+  const qty = parseFloat(document.getElementById('resQty').value);
+  const unit = document.getElementById('resUnit').value.trim();
+  const cost = document.getElementById('resCost').value ? parseFloat(document.getElementById('resCost').value) : null;
+  
+  if (!name || isNaN(qty) || !unit) return toast('Material, Qty, and Unit are required', 'danger');
+
+  try {
+    const res = await fetch(`${API}/complaints/${activeComplaintId}/resources`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ material_name: name, quantity: qty, unit, cost_estimate: cost })
+    });
+    if (!res.ok) throw new Error();
+    toast('Resource added');
+    // Clear
+    document.getElementById('resName').value = '';
+    document.getElementById('resQty').value = '';
+    document.getElementById('resUnit').value = '';
+    document.getElementById('resCost').value = '';
+    await loadComplaintResources(activeComplaintId);
+  } catch(e) { toast('Error adding resource', 'danger'); }
+}
+
+async function loadFeedback(id) {
+  try {
+    const res = await fetch(`${API}/complaints/${id}/feedback`, { headers: authHeaders() });
+    if (!res.ok || res.status===204) return;
+    const data = await res.json();
+    if (data && data.rating) {
+      // Append feedback block beneath description
+      document.getElementById('detailsContent').innerHTML += `
+        <div class="mt-3 p-2" style="background:rgba(16,185,129,.1); border:1px solid rgba(16,185,129,.2); border-radius:6px; color:var(--text-primary);">
+            <strong>Citizen Feedback:</strong> ${'⭐'.repeat(data.rating)} ${data.comments ? '<br/>"'+data.comments+'"' : ''}
+        </div>
+      `;
+      // Don't show the form if they already submitted
+      document.getElementById('feedbackFormSection').style.display='none';
+    }
+  } catch(e) {}
+}
+
+async function submitFeedback() {
+  const rating = parseInt(document.getElementById('fbRating').value);
+  const comments = document.getElementById('fbComments').value.trim();
+  
+  if(isNaN(rating) || rating<1 || rating>5) return toast('Rating must be 1-5', 'danger');
+  
+  try {
+    const res = await fetch(`${API}/complaints/${activeComplaintId}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ rating, comments: comments||null })
+    });
+    if (!res.ok) throw new Error();
+    toast('Feedback submitted!');
+    document.getElementById('feedbackFormSection').style.display='none';
+    await loadFeedback(activeComplaintId);
+  } catch(e) { toast('Error submitting feedback', 'danger'); }
+}
 
 // Hook is now in the tab block above.
 // document.addEventListener('DOMContentLoaded', init);
