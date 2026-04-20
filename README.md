@@ -1,7 +1,7 @@
 # 🛣️ Road Complaint Management System
 
-> A full-stack DBMS project built with **FastAPI**, **MySQL**, and **Bootstrap 5**.
-> Citizens can file road-damage complaints; officers manage and resolve them through a live dashboard.
+> A full-stack DBMS project built with **FastAPI**, **PostgreSQL (Supabase)**, and **Bootstrap 5**.
+> Citizens can file road-damage complaints, give feedback on resolved issues, view public advisories; officers manage and resolve complaints through a live dashboard and track resource usage.
 
 ---
 
@@ -9,17 +9,31 @@
 
 ```
 road_complaint_system/
-├── main.py               # FastAPI app — all REST endpoints
-├── database.py           # MySQL connection helper (no ORM)
+├── main.py               # FastAPI app — all REST endpoints (Auth, Complaints, Analytics, PDF)
+├── database.py           # PostgreSQL connection helper using psycopg2
 ├── models.py             # Pydantic request/response models
-├── schema.sql            # CREATE TABLEs + trigger + procedure + view + indexes
-├── seed_data.sql         # Sample data (Pune wards, citizens, complaints)
+├── supabase_schema.sql   # PostgreSQL schema: tables, trigger, function, view, ENUMs
 ├── requirements.txt      # Python dependencies
-└── templates/
+├── .env                  # Environment Variables (Database URL, JWT Secret, MongoDB URI)
+└── templates/            # Frontend HTML Views
     ├── index.html        # Citizen complaint form
     ├── dashboard.html    # Officer admin dashboard
-    └── analytics.html    # Analytics + bar chart + SLA breach table
+    ├── analytics.html    # Analytics + bar chart + SLA breach table
+    └── map.html          # Interactive Leaflet Map for complaints
 ```
+
+---
+
+## ✨ Features Added
+
+- **Migration to PostgreSQL (Supabase)**: Switched from local MySQL to a cloud-based Supabase PostgreSQL instance.
+- **JWT Authentication System**: Secure Role-Based Access Control (RBAC) separating Citizens, Officers, and Admins.
+- **Complaint Feedback**: Citizens can leave a 1-5 star rating and comments upon issue resolution.
+- **Public Advisories**: Officers can broadcast ward/city level announcements to citizens.
+- **Resource Tracking**: Detailed resource costing (materials/quantity) attached to complaint resolution.
+- **MongoDB GridFS Integraton**: Scalable photo uploads using MongoDB.
+- **Auto Assignment via GPS**: Distance-based worker auto-assignment to complaints via the Haversine formula.
+- **Dynamic PDF Generation**: On-the-fly downloadable PDF receipts for citizens upon submitting complaints, generated with ReportLab.
 
 ---
 
@@ -30,43 +44,31 @@ road_complaint_system/
 | Tool | Version |
 |------|---------|
 | Python | 3.9+ |
-| MySQL Server | 8.0+ |
+| PostgreSQL / Supabase | Latest |
+| MongoDB (Optional) | User's choice (local or atlas) |
 | pip | Latest |
 
 ---
 
-### Step 1 — Create the Database
+### Step 1 — Create the Database on Supabase
 
-Open **MySQL Workbench** or the `mysql` CLI and run the two SQL files in order:
+Create a new Supabase project or spin up your local PostgreSQL instance, then execute the schema and seed file:
 
 ```sql
--- In MySQL Workbench / CLI:
-source path/to/road_complaint_system/schema.sql;
-source path/to/road_complaint_system/seed_data.sql;
-```
-
-Or from the command line:
-
-```bash
-mysql -u root -p < schema.sql
-mysql -u root -p road_complaint_db < seed_data.sql
+-- In Supabase SQL Editor or PSQL CLI:
+\i path/to/road_complaint_system/supabase_schema.sql
 ```
 
 ---
 
-### Step 2 — Configure the Database Connection
+### Step 2 — Configure the Environment Values
 
-Open **`database.py`** and update these three values to match your MySQL setup:
+Create a `.env` file in the root folder and add your connection variables:
 
-```python
-DB_CONFIG = {
-    "host":     "localhost",
-    "port":     3306,
-    "user":     "root",      # ← your MySQL username
-    "password": "",          # ← your MySQL password
-    "database": "road_complaint_db",
-    ...
-}
+```env
+DATABASE_URL="postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-SUPABASE-REF].supabase.co:5432/postgres"
+JWT_SECRET_KEY="your-secret-key"
+MONGO_URI="mongodb+srv://<user>:<password>@cluster0.mongodb.net/road_complaints" # Optional
 ```
 
 ---
@@ -97,6 +99,7 @@ The API is now live at **`http://localhost:8000`**
 | 📋 File a Complaint | http://localhost:8000/index |
 | 🖥️ Officer Dashboard | http://localhost:8000/dashboard |
 | 📊 Analytics | http://localhost:8000/analytics |
+| 🗺️ Interactive Maps | http://localhost:8000/map |
 | 📖 API Docs (Swagger) | http://localhost:8000/docs |
 
 ---
@@ -107,52 +110,46 @@ The API is now live at **`http://localhost:8000`**
 
 | Table | Purpose |
 |-------|---------|
-| `CITIZEN` | Registered citizens who file complaints |
-| `WARD` | Administrative wards in Pune |
-| `OFFICER` | Officers responsible for each ward |
-| `WORKER` | Field workers with skill types |
-| `COMPLAINT` | Core complaint records |
-| `COMPLAINT_LOG` | Audit trail of all status changes |
+| `app_user` | JWT-Authenticated User Accounts (Citizen, Officer, Admin) |
+| `citizen` | Registered citizens who file complaints |
+| `ward` | Administrative wards in Pune |
+| `officer` | Officers responsible for each ward |
+| `worker` | Field workers with skill types and GPS bases |
+| `complaint` | Core complaint records with geolocation |
+| `complaint_log` | Audit trail of all status changes |
+| `complaint_feedback`| Citizen satisfaction ratings post-resolution |
+| `resource_usage` | Logs of material expenditure by workers |
+| `public_advisory` | Announcements at the ward/city level |
 
-### Advanced SQL Features
+### Advanced PostgreSQL Features
 
 | Feature | Details |
 |---------|---------|
-| **Trigger** | `trg_complaint_status_log` — auto-logs status changes into `COMPLAINT_LOG` |
-| **Stored Procedure** | `GetWardSummary(ward_id)` — returns open/in_progress/resolved counts |
-| **View** | `active_complaints_view` — non-resolved complaints with citizen + ward info |
-| **Indexes** | On `COMPLAINT.ward_id`, `COMPLAINT.status`, `COMPLAINT.filed_at` |
+| **Trigger + Function** | `trg_complaint_status_log` — Calls `fn_log_complaint_status_change()` to auto-populate `complaint_log` |
+| **Custom Function** | `get_ward_summary(ward_id)` — Returns real-time counts of open/in_progress/resolved issues |
+| **View** | `active_complaints_view` — Non-resolved complaints with citizen + ward info joined |
+| **Geospatial Math** | Standard Haversine distance computations via `acos` & `radians` to find nearest workers |
+| **Indexes** | Partial indexing on unresolved complaints |
 
 ---
 
-## 🔌 API Endpoints
+## 🔌 Core API Endpoints
 
-| Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/` | Health check |
-| POST | `/citizens` | Register a citizen |
-| GET | `/citizens` | List all citizens |
-| POST | `/complaints` | File a complaint |
-| GET | `/complaints` | List complaints (filter by `status`, `ward_id`) |
-| GET | `/complaints/{id}` | Get complaint details + audit log |
-| PATCH | `/complaints/{id}/status` | Update complaint status (triggers auto-log) |
-| PATCH | `/complaints/{id}/worker` | Assign a worker |
-| GET | `/wards` | List all wards |
-| GET | `/wards/{id}/summary` | Ward stats via stored procedure |
-| GET | `/analytics/ward-summary` | Ward-wise grouped complaint counts |
-| GET | `/analytics/sla-breach` | Open complaints older than 7 days |
-| GET | `/active-complaints` | Query the MySQL VIEW directly |
-| GET | `/workers` | List all workers |
+### Auth
+- `POST /register` \| `POST /login`
 
----
+### Complaints & Maps
+- `POST /complaints` — File a complaint (supports Multipart Form with Photos)
+- `GET /complaints` — Filtered list
+- `GET /complaints/map-data` — GeoJSON-like feed for Leaflet.js
+- `POST /complaints/{id}/auto-assign` — Geo-locates the closest available worker
+- `GET /complaints/{id}/report` — Downloads PDF receipt
+- `PATCH /complaints/{id}/status` — Toggles state and emits asynchronous SMTP emails
 
-## 🎯 Key Design Decisions
-
-- **No ORM** — All SQL is written manually using `mysql-connector-python` (DBMS project requirement)
-- **Trigger demonstration** — Every `PATCH /complaints/{id}/status` call fires the MySQL trigger
-- **Stored procedure** — `GET /wards/{id}/summary` calls `CALL GetWardSummary(?)` via `cursor.callproc()`
-- **CORS enabled** — The API allows requests from any origin so the HTML frontend works seamlessly
-- **Circular FK** — `OFFICER ↔ WARD` is a deliberate circular reference (common in real schemas); handled by inserting `OFFICER` first with `NULL ward_id`, then `WARD`, then updating `OFFICER`
+### Infrastructure Extensions
+- `POST /complaints/{id}/feedback` — Submit post-resolution feedback
+- `POST /complaints/{id}/resources` — Log materials used
+- `POST /advisories` / `GET /advisories` — Manage Public Bulletins
 
 ---
 
@@ -160,12 +157,12 @@ The API is now live at **`http://localhost:8000`**
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | FastAPI (Python) |
-| Database | MySQL 8 |
-| DB Connector | mysql-connector-python |
-| Validation | Pydantic v2 |
-| Frontend | HTML5 + Bootstrap 5 CDN + Chart.js CDN |
-| Server | Uvicorn (ASGI) |
+| **Backend** | FastAPI (Python) |
+| **Database** | PostgreSQL 15+ (Supabase) + MongoDB (GridFS) |
+| **DB Driver** | psycopg2 + pymongo |
+| **Validation** | Pydantic v2 |
+| **Frontend** | HTML5 + Bootstrap 5 + Leaflet.js + Chart.js |
+| **PDF Generation** | ReportLab |
 
 ---
 
