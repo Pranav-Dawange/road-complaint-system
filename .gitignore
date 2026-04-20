@@ -31,3 +31,6 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
+
+# Linting output
+flake8_output.txt
