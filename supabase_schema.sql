@@ -142,6 +142,44 @@ CREATE TABLE IF NOT EXISTS notification (
     is_sent          BOOLEAN      NOT NULL DEFAULT FALSE
 );
 
+-- ----------------------------------------------------------
+-- TABLE 9: COMPLAINT_FEEDBACK (Citizen satisfaction loop)
+-- ----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS complaint_feedback (
+    feedback_id      SERIAL       PRIMARY KEY,
+    complaint_id     INT          NOT NULL UNIQUE REFERENCES complaint(complaint_id) ON DELETE CASCADE,
+    rating           INT          NOT NULL CHECK (rating >= 1 AND rating <= 5),
+    comments         TEXT,
+    citizen_photo_path VARCHAR(255),
+    submitted_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- ----------------------------------------------------------
+-- TABLE 10: RESOURCE_USAGE (Tracking material expenditure)
+-- ----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS resource_usage (
+    usage_id         SERIAL       PRIMARY KEY,
+    complaint_id     INT          NOT NULL REFERENCES complaint(complaint_id) ON DELETE CASCADE,
+    material_name    VARCHAR(100) NOT NULL,
+    quantity         DECIMAL(10,2) NOT NULL,
+    unit             VARCHAR(50)  NOT NULL,
+    cost_estimate    DECIMAL(12,2),
+    logged_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- ----------------------------------------------------------
+-- TABLE 11: PUBLIC_ADVISORY (City/Ward level announcements)
+-- ----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public_advisory (
+    advisory_id      SERIAL       PRIMARY KEY,
+    ward_id          INT          REFERENCES ward(ward_id) ON DELETE CASCADE,
+    officer_id       INT          NOT NULL REFERENCES officer(officer_id) ON DELETE CASCADE,
+    title            VARCHAR(255) NOT NULL,
+    message          TEXT         NOT NULL,
+    valid_until      TIMESTAMPTZ  NOT NULL,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
 
 -- ============================================================
 -- SECTION 3 — CONSTRAINTS & NAMED FOREIGN KEYS

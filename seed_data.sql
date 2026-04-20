@@ -131,3 +131,24 @@ INSERT INTO COMPLAINT_LOG (complaint_id, old_status, new_status, changed_by, cha
 -- automatically by the FastAPI startup event in main.py.
 -- You do NOT need to insert them manually here.
 -- ============================================================
+
+-- ============================================================
+-- 7. COMPLAINT_FEEDBACK (Seed data for resolved complaints)
+-- ============================================================
+INSERT INTO COMPLAINT_FEEDBACK (complaint_id, rating, comments, submitted_at) VALUES
+(1, 4, 'Pothole was patched nicely, but traffic was blocked for too long.', DATE_SUB(NOW(), INTERVAL 4 DAY)),
+(5, 5, 'Excellent work on fixing the road crack!', DATE_SUB(NOW(), INTERVAL 7 DAY));
+
+-- ============================================================
+-- 8. RESOURCE_USAGE (Seed data)
+-- ============================================================
+INSERT INTO RESOURCE_USAGE (complaint_id, material_name, quantity, unit, cost_estimate, logged_at) VALUES
+(1, 'Asphalt Mix', 120.00, 'kg', 4500.00, DATE_SUB(NOW(), INTERVAL 5 DAY)),
+(5, 'Concrete', 50.00, 'kg', 1200.00, DATE_SUB(NOW(), INTERVAL 8 DAY));
+
+-- ============================================================
+-- 9. PUBLIC_ADVISORY (Seed data)
+-- ============================================================
+INSERT INTO PUBLIC_ADVISORY (ward_id, officer_id, title, message, valid_until, created_at) VALUES
+(1, 1, 'Heavy Waterlogging Expected', 'Please avoid FC Road area during heavy rains as drainage clearing is still underway.', DATE_ADD(NOW(), INTERVAL 5 DAY), NOW()),
+(NULL, 1, 'City-Wide Pothole Drive', 'We are initiating a city-wide pothole repair drive. Please report any severe damages immediately.', DATE_ADD(NOW(), INTERVAL 30 DAY), NOW());
