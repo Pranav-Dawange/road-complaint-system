@@ -12,6 +12,7 @@
     /* Chart containers */
     .chart-box { position: relative; height: 280px; }
     .chart-box-sm { position: relative; height: 260px; }
+    .chart-box-lg { position: relative; height: 320px; }
 
     /* SLA row colors */
     .sla-high { background: rgba(239,68,68,.09) !important; }
@@ -44,6 +45,41 @@
     }
 
     .stat-icon-box { width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0; }
+
+    /* Cursor section — Ward Health Score */
+    .health-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 999px; font-size: .76rem; font-weight: 700;
+    }
+    .health-excellent { background: rgba(16,185,129,.18); color: var(--success); border: 1px solid rgba(16,185,129,.35); }
+    .health-good      { background: rgba(6,182,212,.18);  color: var(--accent);  border: 1px solid rgba(6,182,212,.35); }
+    .health-fair      { background: rgba(245,158,11,.15); color: var(--warning); border: 1px solid rgba(245,158,11,.3); }
+    .health-poor      { background: rgba(239,68,68,.15);  color: var(--danger);  border: 1px solid rgba(239,68,68,.3); }
+
+    /* Mini progress bar for cursor table */
+    .mini-progress { height: 6px; background: rgba(255,255,255,.08); border-radius: 3px; overflow: hidden; min-width: 60px; }
+    .mini-progress-fill { height: 100%; border-radius: 3px; transition: width .6s ease; }
+
+    /* Cursor summary cards */
+    .cursor-stat { text-align: center; padding: 16px 12px; }
+    .cursor-stat-num { font-size: 1.5rem; font-weight: 800; line-height: 1.2; }
+    .cursor-stat-lbl { font-size: .72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+
+    /* Cursor badge */
+    .cursor-badge {
+      background: linear-gradient(135deg, rgba(124,58,237,.2), rgba(6,182,212,.2));
+      border: 1px solid rgba(124,58,237,.3);
+      color: #a78bfa; border-radius: 999px; padding: 2px 12px;
+      font-size: .7rem; font-weight: 700; letter-spacing: .06em;
+    }
+
+    /* Totals row */
+    .totals-row td {
+      background: rgba(255,255,255,.04) !important;
+      border-top: 2px solid rgba(6,182,212,.3) !important;
+      font-weight: 700 !important;
+      color: var(--text-primary) !important;
+    }
   </style>
 </head>
 <body>
@@ -68,7 +104,7 @@
         <li class="nav-item"><a class="nav-link-custom active" href="analytics.html"><i class="bi bi-bar-chart-line"></i>Analytics</a></li>
         <li class="nav-item"><a class="nav-link-custom" href="map.html"><i class="bi bi-map"></i>Map</a></li>
         <li class="nav-item ms-2" id="navUser"></li>
-      </ul>`
+      </ul>
     </div>
   </div>
 </nav>
@@ -79,8 +115,8 @@
 <div id="loginWall" class="container">
   <div class="glass-card p-4 text-center fade-up" style="max-width:400px;width:100%;">
     <i class="bi bi-lock-fill mb-3" style="font-size:2.4rem;background:linear-gradient(135deg,var(--primary),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;display:block;"></i>
-    <h5 style="color:var(--text-primary);font-weight:700;" class="mb-1">Admin Login Required</h5>
-    <p style="color:var(--text-muted);font-size:.84rem;" class="mb-4">Analytics is restricted to admin users.</p>
+    <h5 style="color:var(--text-primary);font-weight:700;" class="mb-1">Staff Login Required</h5>
+    <p style="color:var(--text-muted);font-size:.84rem;" class="mb-4">Analytics is restricted to officers &amp; admins.</p>
     <div class="mb-3"><input type="text"     id="lwUser" class="glass-input" placeholder="Username" /></div>
     <div class="mb-3"><input type="password" id="lwPass" class="glass-input" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()" /></div>
     <div id="lwErr" class="d-none mb-3" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:10px 14px;color:var(--danger);font-size:.83rem;text-align:left;"></div>
@@ -171,6 +207,84 @@
     </div>
   </div>
 
+  <!-- ══ CURSOR-BASED WARD REPORT SECTION ═══════════════════ -->
+  <div class="container-fluid px-4 mt-4">
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <h5 class="gradient-text mb-0" style="font-size:1.3rem;"><i class="bi bi-database-fill-gear me-2"></i>Cursor-Based Ward Performance Report</h5>
+      <span class="cursor-badge">SQL CURSOR</span>
+    </div>
+    <p style="color:var(--text-muted);font-size:.82rem;margin:-4px 0 16px;">Generated using PostgreSQL explicit <code style="background:rgba(124,58,237,.15);padding:2px 6px;border-radius:4px;color:#a78bfa;">CURSOR</code> — iterates over every ward row-by-row to compute aggregated statistics.</p>
+  </div>
+
+  <!-- Cursor summary stat cards -->
+  <div class="container-fluid px-4">
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-lg-3">
+        <div class="glass-card cursor-stat fade-up delay-1">
+          <div class="cursor-stat-num" id="curTotal" style="background:linear-gradient(135deg,var(--primary),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">—</div>
+          <div class="cursor-stat-lbl">Total Complaints</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="glass-card cursor-stat fade-up delay-2">
+          <div class="cursor-stat-num" id="curAvgDays" style="color:var(--accent);">—</div>
+          <div class="cursor-stat-lbl">Avg Resolution Days</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="glass-card cursor-stat fade-up delay-2">
+          <div class="cursor-stat-num" id="curSLATotal" style="color:var(--danger);">—</div>
+          <div class="cursor-stat-lbl">Total SLA Breaches</div>
+        </div>
+      </div>
+      <div class="col-6 col-lg-3">
+        <div class="glass-card cursor-stat fade-up delay-3">
+          <div class="cursor-stat-num" id="curBestWard" style="color:var(--success);font-size:1rem;">—</div>
+          <div class="cursor-stat-lbl">Best Performing Ward</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ward performance horizontal bar chart (cursor data) -->
+  <div class="container-fluid px-4">
+    <div class="row g-4 mb-4">
+      <div class="col-lg-7">
+        <div class="glass-card p-4 h-100 fade-up delay-2">
+          <div class="section-head mb-3"><i class="bi bi-bar-chart-steps me-2"></i>Ward Performance Comparison <span style="color:var(--text-muted);font-weight:400;font-size:.78rem;text-transform:none;letter-spacing:0;">(cursor-generated)</span></div>
+          <div class="chart-box-lg"><canvas id="cursorWardChart"></canvas></div>
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <div class="glass-card p-4 h-100 fade-up delay-3">
+          <div class="section-head mb-3"><i class="bi bi-speedometer me-2"></i>Ward Health Scores</div>
+          <div id="healthScoreList" style="max-height:320px;overflow-y:auto;padding-right:4px;">
+            <div style="text-align:center;padding:2rem;color:var(--text-muted);">Loading…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comprehensive Ward Report table -->
+  <div class="container-fluid px-4">
+    <div class="glass-card fade-up delay-2" style="border-left:4px solid rgba(124,58,237,.5);">
+      <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:space-between;">
+        <h6 style="color:var(--text-primary);font-weight:700;margin:0;"><i class="bi bi-table me-2" style="color:#a78bfa;"></i>Detailed Ward Report <span style="color:var(--text-muted);font-weight:400;font-size:.78rem;">— cursor iteration over all wards</span></h6>
+        <span id="cursorWardCount" class="st-badge badge-in_progress">0 wards</span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="glass-table">
+          <thead><tr><th>Ward ID</th><th>Ward Name</th><th>Total</th><th>Open</th><th>In Progress</th><th>Resolved</th><th>Resolution Rate</th><th>Avg Days</th><th>SLA Breaches</th><th>Health</th></tr></thead>
+          <tbody id="allWardsBody">
+            <tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--text-muted);">Loading…</td></tr>
+          </tbody>
+          <tfoot id="allWardsFoot" style="display:none;"></tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- Resolution rate table -->
   <div class="container-fluid px-4 mt-4">
     <div class="glass-card fade-up delay-2">
@@ -245,7 +359,7 @@ async function doLogin() {
     const res  = await fetch(`${API}/login`, { method:'POST', body: new URLSearchParams({username,password}) });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail||'Login failed');
-    if (data.role !== 'admin') throw new Error('Only admin users can access analytics.');
+    if (data.role !== 'admin' && data.role !== 'officer') throw new Error('Only officer/admin users can access analytics.');
     localStorage.setItem('rcms_token', data.access_token);
     localStorage.setItem('rcms_user', JSON.stringify({username:data.username,role:data.role}));
     token = data.access_token;
@@ -289,17 +403,18 @@ function destroy(c){ if(c){ c.destroy(); } }
 /* ── Load all data ──────────────────────────────────────── */
 async function loadAll() {
   try {
-    const [wardR,slaR,dmgR,trendR,resR] = await Promise.all([
+    const [wardR,slaR,dmgR,trendR,resR,allWardsR] = await Promise.all([
       fetch(`${API}/analytics/ward-summary`,    {headers:authHeaders()}),
       fetch(`${API}/analytics/sla-breach`,      {headers:authHeaders()}),
       fetch(`${API}/analytics/damage-breakdown`, {headers:authHeaders()}),
       fetch(`${API}/analytics/monthly-trend`,   {headers:authHeaders()}),
       fetch(`${API}/analytics/resolution-rate`, {headers:authHeaders()}),
+      fetch(`${API}/analytics/all-wards-report`, {headers:authHeaders()}),
     ]);
     if (wardR.status===401||wardR.status===403) { localStorage.removeItem('rcms_token'); location.reload(); return; }
 
-    const [wardData,slaData,dmgData,trendData,resData] = await Promise.all([
-      wardR.json(),slaR.json(),dmgR.json(),trendR.json(),resR.json()
+    const [wardData,slaData,dmgData,trendData,resData,allWardsData] = await Promise.all([
+      wardR.json(),slaR.json(),dmgR.json(),trendR.json(),resR.json(),allWardsR.json()
     ]);
 
     document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString('en-IN');
@@ -309,6 +424,7 @@ async function loadAll() {
     renderTrendChart(trendData);
     renderResolutionTable(resData);
     renderSLATable(slaData);
+    renderAllWardsTable(allWardsData);
   } catch(e){ console.error('Analytics error:',e); }
 }
 
@@ -444,6 +560,174 @@ function renderSLATable(data) {
       <td><span style="background:rgba(239,68,68,.18);border:1px solid rgba(239,68,68,.35);color:var(--danger);border-radius:999px;padding:3px 10px;font-size:.76rem;font-weight:700;">${c.days_pending}d</span></td>
       <td><a href="tel:${c.phone}" class="btn-sm-success" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;"><i class="bi bi-telephone-fill"></i>Call</a></td>
     </tr>`;
+  }).join('');
+}
+
+/* ── Comprehensive Ward Report (Cursor-Generated) ──────── */
+let cursorWardInst = null;
+
+function renderAllWardsTable(data) {
+  const tbody = document.getElementById('allWardsBody');
+  const tfoot = document.getElementById('allWardsFoot');
+  const countBadge = document.getElementById('cursorWardCount');
+
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--text-muted);">No data returned from cursor function</td></tr>';
+    tfoot.style.display = 'none';
+    return;
+  }
+
+  countBadge.textContent = `${data.length} wards`;
+
+  /* ── Compute summary stats ───────────────────────────── */
+  const totals = data.reduce((a, r) => ({
+    total:    a.total + (r.total_complaints || 0),
+    open:     a.open + (r.open_complaints || 0),
+    inProg:   a.inProg + (r.in_progress_complaints || 0),
+    resolved: a.resolved + (r.resolved_complaints || 0),
+    sla:      a.sla + (r.sla_breaches || 0),
+  }), { total: 0, open: 0, inProg: 0, resolved: 0, sla: 0 });
+
+  const daysArr = data.filter(r => r.avg_resolution_days !== null).map(r => parseFloat(r.avg_resolution_days));
+  const avgDaysAll = daysArr.length ? (daysArr.reduce((a, b) => a + b, 0) / daysArr.length).toFixed(1) : '—';
+
+  // Best ward = highest resolution rate with at least 1 complaint
+  const withComps = data.filter(r => r.total_complaints > 0);
+  let bestWard = '—';
+  if (withComps.length) {
+    const best = withComps.reduce((a, b) => {
+      const aPct = a.total_complaints ? (a.resolved_complaints / a.total_complaints) : 0;
+      const bPct = b.total_complaints ? (b.resolved_complaints / b.total_complaints) : 0;
+      return bPct > aPct ? b : a;
+    });
+    bestWard = best.ward_name;
+  }
+
+  // Update cursor summary cards
+  countUp(document.getElementById('curTotal'), totals.total);
+  document.getElementById('curAvgDays').textContent = avgDaysAll === '—' ? '—' : `${avgDaysAll}d`;
+  countUp(document.getElementById('curSLATotal'), totals.sla);
+  document.getElementById('curBestWard').textContent = bestWard;
+
+  /* ── Health score helper ─────────────────────────────── */
+  function healthScore(r) {
+    if (!r.total_complaints) return { score: 100, label: 'No Data', cls: 'health-good' };
+    const resPct = (r.resolved_complaints / r.total_complaints) * 100;
+    const slaPenalty = r.sla_breaches * 10;
+    const daysPenalty = r.avg_resolution_days ? Math.min(r.avg_resolution_days * 3, 30) : 0;
+    const score = Math.max(0, Math.min(100, Math.round(resPct - slaPenalty - daysPenalty)));
+    let label, cls;
+    if (score >= 80) { label = 'Excellent'; cls = 'health-excellent'; }
+    else if (score >= 60) { label = 'Good'; cls = 'health-good'; }
+    else if (score >= 40) { label = 'Fair'; cls = 'health-fair'; }
+    else { label = 'Poor'; cls = 'health-poor'; }
+    return { score, label, cls };
+  }
+
+  /* ── Render table rows ───────────────────────────────── */
+  tbody.innerHTML = data.map((r, i) => {
+    const days = r.avg_resolution_days;
+    const dCls = days === null ? '' : days < 5 ? 'days-ok' : days <= 10 ? 'days-warn' : 'days-bad';
+    const resPct = r.total_complaints ? Math.round((r.resolved_complaints / r.total_complaints) * 100) : 0;
+    const h = healthScore(r);
+    const progressColor = resPct >= 70 ? 'var(--success)' : resPct >= 40 ? 'var(--warning)' : 'var(--danger)';
+
+    return `<tr style="animation:fadeUp .3s ease ${i * .04}s both;">
+      <td style="color:var(--text-muted);">${r.ward_id}</td>
+      <td style="font-weight:600;color:var(--text-primary);">${r.ward_name}</td>
+      <td><strong>${r.total_complaints}</strong></td>
+      <td style="color:var(--danger);">${r.open_complaints}</td>
+      <td style="color:var(--warning);">${r.in_progress_complaints}</td>
+      <td style="color:var(--success);">${r.resolved_complaints}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="mini-progress" style="flex:1;">
+            <div class="mini-progress-fill" style="width:${resPct}%;background:${progressColor};"></div>
+          </div>
+          <span style="color:${progressColor};font-size:.8rem;font-weight:600;min-width:2.6rem;">${resPct}%</span>
+        </div>
+      </td>
+      <td class="${dCls}">${days !== null ? `${days}d` : '—'}</td>
+      <td style="color:var(--danger);font-weight:600;">${r.sla_breaches > 0 ? `<i class="bi bi-exclamation-triangle-fill me-1"></i>${r.sla_breaches}` : '<span style="color:var(--success)">✓</span>'}</td>
+      <td><span class="health-pill ${h.cls}">${h.score} · ${h.label}</span></td>
+    </tr>`;
+  }).join('');
+
+  /* ── Totals footer row ───────────────────────────────── */
+  const overallPct = totals.total ? Math.round((totals.resolved / totals.total) * 100) : 0;
+  tfoot.style.display = '';
+  tfoot.innerHTML = `<tr class="totals-row">
+    <td colspan="2" style="text-align:right;">TOTALS (${data.length} wards)</td>
+    <td>${totals.total}</td>
+    <td style="color:var(--danger);">${totals.open}</td>
+    <td style="color:var(--warning);">${totals.inProg}</td>
+    <td style="color:var(--success);">${totals.resolved}</td>
+    <td>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="mini-progress" style="flex:1;">
+          <div class="mini-progress-fill" style="width:${overallPct}%;background:linear-gradient(90deg,var(--primary),var(--accent));"></div>
+        </div>
+        <span style="color:var(--accent);font-size:.8rem;font-weight:700;">${overallPct}%</span>
+      </div>
+    </td>
+    <td>${avgDaysAll === '—' ? '—' : avgDaysAll + 'd'}</td>
+    <td style="color:var(--danger);">${totals.sla}</td>
+    <td>—</td>
+  </tr>`;
+
+  /* ── Ward Performance horizontal bar chart ────────────── */
+  renderCursorWardChart(data, healthScore);
+
+  /* ── Health Score list ────────────────────────────────── */
+  renderHealthScoreList(data, healthScore);
+}
+
+/* ── Cursor Ward Chart (Horizontal Bar) ────────────────── */
+function renderCursorWardChart(data, healthScore) {
+  destroy(cursorWardInst);
+  const sorted = [...data].sort((a, b) => (b.total_complaints || 0) - (a.total_complaints || 0));
+  cursorWardInst = new Chart(document.getElementById('cursorWardChart'), {
+    type: 'bar',
+    data: {
+      labels: sorted.map(w => w.ward_name),
+      datasets: [
+        { label: 'Open',        data: sorted.map(w => w.open_complaints || 0),        backgroundColor: 'rgba(239,68,68,.7)',  borderRadius: 4, barPercentage: .7 },
+        { label: 'In Progress', data: sorted.map(w => w.in_progress_complaints || 0), backgroundColor: 'rgba(245,158,11,.7)', borderRadius: 4, barPercentage: .7 },
+        { label: 'Resolved',    data: sorted.map(w => w.resolved_complaints || 0),    backgroundColor: 'rgba(16,185,129,.7)', borderRadius: 4, barPercentage: .7 },
+      ]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', labels: { boxWidth: 12, padding: 14 } } },
+      scales: {
+        x: { stacked: true, grid: { color: 'rgba(255,255,255,.05)' }, ticks: { color: '#94a3b8', precision: 0 } },
+        y: { stacked: true, grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+/* ── Health Score sidebar list ─────────────────────────── */
+function renderHealthScoreList(data, healthScore) {
+  const container = document.getElementById('healthScoreList');
+  const scored = data.map(r => ({ ...r, ...healthScore(r) })).sort((a, b) => b.score - a.score);
+
+  container.innerHTML = scored.map((r, i) => {
+    const barColor = r.cls.replace('health-', '');
+    const colorMap = { excellent: 'var(--success)', good: 'var(--accent)', fair: 'var(--warning)', poor: 'var(--danger)' };
+    const color = colorMap[barColor] || 'var(--text-muted)';
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05);animation:fadeUp .3s ease ${i * .04}s both;">
+      <span style="color:var(--text-muted);font-size:.75rem;min-width:20px;">#${i + 1}</span>
+      <div style="flex:1;">
+        <div style="color:var(--text-primary);font-weight:600;font-size:.85rem;">${r.ward_name}</div>
+        <div class="mini-progress" style="margin-top:4px;">
+          <div class="mini-progress-fill" style="width:${r.score}%;background:${color};"></div>
+        </div>
+      </div>
+      <span class="health-pill ${r.cls}" style="font-size:.7rem;">${r.score}</span>
+    </div>`;
   }).join('');
 }
 

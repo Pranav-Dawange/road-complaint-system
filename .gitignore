@@ -34,3 +34,12 @@ Thumbs.db
 
 # Linting output
 flake8_output.txt
+
+# User-uploaded photos (stored in MongoDB in production)
+static/uploads/*.jpg
+static/uploads/*.jpeg
+static/uploads/*.png
+
+# Dev artifacts
+data_dump*.json
+db_check.json

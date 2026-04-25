@@ -247,6 +247,169 @@ EXECUTE FUNCTION fn_log_complaint_status_change();
 
 
 -- ============================================================
+-- TRIGGER 2: trg_auto_notify_on_status_change
+-- Automatically inserts a notification row into the NOTIFICATION
+-- table when a complaint's status changes, so the citizen is
+-- informed without relying solely on the application layer.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION fn_auto_notify_on_status_change()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_citizen_id  INT;
+    v_message     TEXT;
+BEGIN
+    -- Only fire when status actually changes
+    IF OLD.status IS DISTINCT FROM NEW.status THEN
+
+        -- Get the citizen who filed this complaint
+        v_citizen_id := NEW.citizen_id;
+
+        -- Build a human-readable notification message
+        v_message := FORMAT(
+            'Your complaint #%s status changed from "%s" to "%s".',
+            NEW.complaint_id,
+            OLD.status,
+            NEW.status
+        );
+
+        -- Append extra info for resolved complaints
+        IF NEW.status = 'resolved' THEN
+            v_message := v_message || ' Thank you for your patience — the issue has been resolved.';
+        END IF;
+
+        -- Insert notification (is_sent = FALSE; the email background job picks it up)
+        INSERT INTO notification (complaint_id, citizen_id, message, is_sent)
+        VALUES (NEW.complaint_id, v_citizen_id, v_message, FALSE);
+
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER trg_auto_notify_on_status_change
+AFTER UPDATE ON complaint
+FOR EACH ROW
+EXECUTE FUNCTION fn_auto_notify_on_status_change();
+
+
+-- ============================================================
+-- TRIGGER 3: trg_set_resolved_timestamp
+-- BEFORE UPDATE trigger that automatically manages resolved_at:
+--   • Sets resolved_at = NOW() when status → 'resolved'
+--   • Clears resolved_at = NULL if complaint is reopened
+-- This removes the need for manual timestamp handling in the API.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION fn_set_resolved_timestamp()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Complaint is being resolved → stamp the resolution time
+    IF NEW.status = 'resolved' AND OLD.status IS DISTINCT FROM 'resolved' THEN
+        NEW.resolved_at := NOW();
+    END IF;
+
+    -- Complaint is being reopened → clear the old resolution time
+    IF NEW.status IS DISTINCT FROM 'resolved' AND OLD.status = 'resolved' THEN
+        NEW.resolved_at := NULL;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER trg_set_resolved_timestamp
+BEFORE UPDATE ON complaint
+FOR EACH ROW
+EXECUTE FUNCTION fn_set_resolved_timestamp();
+
+
+-- ============================================================
+-- CURSOR-BASED FUNCTION: generate_all_wards_report()
+-- Demonstrates an explicit CURSOR to iterate over all wards and
+-- compute a detailed per-ward report: total complaints, open,
+-- in-progress, resolved, average resolution days, SLA breaches.
+-- Returns a consolidated TABLE for all wards.
+--
+-- Usage:  SELECT * FROM generate_all_wards_report();
+-- RPC:    supabase.rpc('generate_all_wards_report')
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION generate_all_wards_report()
+RETURNS TABLE (
+    ward_id              INT,
+    ward_name            VARCHAR(100),
+    total_complaints     BIGINT,
+    open_complaints      BIGINT,
+    in_progress_complaints BIGINT,
+    resolved_complaints  BIGINT,
+    avg_resolution_days  NUMERIC,
+    sla_breaches         BIGINT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    -- Explicit cursor declaration over all wards
+    ward_cursor CURSOR FOR
+        SELECT w.ward_id, w.ward_name FROM ward w ORDER BY w.ward_id;
+
+    -- Row variable to hold each fetched ward
+    ward_row   RECORD;
+BEGIN
+    -- Open the cursor and iterate row-by-row
+    OPEN ward_cursor;
+
+    LOOP
+        -- Fetch the next ward
+        FETCH ward_cursor INTO ward_row;
+        EXIT WHEN NOT FOUND;
+
+        -- For each ward, compute aggregated stats and return a row
+        RETURN QUERY
+            SELECT
+                ward_row.ward_id,
+                ward_row.ward_name,
+
+                -- Total complaints in this ward
+                COUNT(c.complaint_id)                                              AS total_complaints,
+
+                -- Breakdown by status
+                COUNT(c.complaint_id) FILTER (WHERE c.status = 'open')            AS open_complaints,
+                COUNT(c.complaint_id) FILTER (WHERE c.status = 'in_progress')     AS in_progress_complaints,
+                COUNT(c.complaint_id) FILTER (WHERE c.status = 'resolved')        AS resolved_complaints,
+
+                -- Average number of days to resolve (NULL if none resolved)
+                ROUND(AVG(
+                    CASE WHEN c.status = 'resolved' AND c.resolved_at IS NOT NULL
+                         THEN EXTRACT(EPOCH FROM (c.resolved_at - c.filed_at)) / 86400.0
+                    END
+                )::NUMERIC, 1)                                                     AS avg_resolution_days,
+
+                -- SLA breaches: open/in_progress complaints older than 7 days
+                COUNT(c.complaint_id) FILTER (
+                    WHERE c.status <> 'resolved'
+                      AND (NOW() - c.filed_at) > INTERVAL '7 days'
+                )                                                                  AS sla_breaches
+
+            FROM complaint c
+            WHERE c.ward_id = ward_row.ward_id;
+
+    END LOOP;
+
+    -- Close the cursor
+    CLOSE ward_cursor;
+
+    RETURN;
+END;
+$$;
+
+
+-- ============================================================
 -- SECTION 6 — FUNCTION (converted stored procedure)
 -- MySQL:    CALL GetWardSummary(p_ward_id)
 -- PostgreSQL: SELECT * FROM get_ward_summary(p_ward_id)

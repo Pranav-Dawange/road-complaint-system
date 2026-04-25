@@ -176,6 +176,138 @@ END$$
 DELIMITER ;
 
 -- ============================================================
+-- TRIGGER 2: trg_auto_notify_on_status_change
+-- Automatically inserts a notification row when complaint
+-- status changes, so the citizen is informed via the system.
+-- ============================================================
+DELIMITER $$
+
+CREATE TRIGGER trg_auto_notify_on_status_change
+AFTER UPDATE ON COMPLAINT
+FOR EACH ROW
+BEGIN
+    DECLARE v_message TEXT;
+
+    IF OLD.status <> NEW.status THEN
+        SET v_message = CONCAT(
+            'Your complaint #', NEW.complaint_id,
+            ' status changed from "', OLD.status, '" to "', NEW.status, '".'
+        );
+
+        IF NEW.status = 'resolved' THEN
+            SET v_message = CONCAT(v_message,
+                ' Thank you for your patience — the issue has been resolved.');
+        END IF;
+
+        INSERT INTO NOTIFICATION (complaint_id, citizen_id, message, is_sent)
+        VALUES (NEW.complaint_id, NEW.citizen_id, v_message, FALSE);
+    END IF;
+END$$
+
+DELIMITER ;
+
+-- ============================================================
+-- TRIGGER 3: trg_set_resolved_timestamp
+-- BEFORE UPDATE trigger that auto-manages resolved_at:
+--   • Sets resolved_at = NOW() when status → 'resolved'
+--   • Clears resolved_at = NULL if complaint is reopened
+-- ============================================================
+DELIMITER $$
+
+CREATE TRIGGER trg_set_resolved_timestamp
+BEFORE UPDATE ON COMPLAINT
+FOR EACH ROW
+BEGIN
+    -- Complaint is being resolved
+    IF NEW.status = 'resolved' AND OLD.status <> 'resolved' THEN
+        SET NEW.resolved_at = NOW();
+    END IF;
+
+    -- Complaint is being reopened
+    IF NEW.status <> 'resolved' AND OLD.status = 'resolved' THEN
+        SET NEW.resolved_at = NULL;
+    END IF;
+END$$
+
+DELIMITER ;
+
+-- ============================================================
+-- CURSOR-BASED PROCEDURE: GenerateAllWardsReport
+-- Uses an explicit CURSOR to iterate over all wards and compute
+-- a detailed per-ward report: total, open, in_progress, resolved,
+-- avg resolution days, and SLA breaches.
+-- ============================================================
+DELIMITER $$
+
+CREATE PROCEDURE GenerateAllWardsReport()
+BEGIN
+    -- Variables to hold cursor row values
+    DECLARE v_ward_id    INT;
+    DECLARE v_ward_name  VARCHAR(100);
+    DECLARE v_done       INT DEFAULT 0;
+
+    -- Declare the cursor
+    DECLARE ward_cursor CURSOR FOR
+        SELECT ward_id, ward_name FROM WARD ORDER BY ward_id;
+
+    -- Handler for end-of-cursor
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = 1;
+
+    -- Temporary table to collect results
+    DROP TEMPORARY TABLE IF EXISTS tmp_ward_report;
+    CREATE TEMPORARY TABLE tmp_ward_report (
+        ward_id              INT,
+        ward_name            VARCHAR(100),
+        total_complaints     INT,
+        open_complaints      INT,
+        in_progress_complaints INT,
+        resolved_complaints  INT,
+        avg_resolution_days  DECIMAL(10,1),
+        sla_breaches         INT
+    );
+
+    -- Open cursor and iterate
+    OPEN ward_cursor;
+
+    ward_loop: LOOP
+        FETCH ward_cursor INTO v_ward_id, v_ward_name;
+        IF v_done = 1 THEN
+            LEAVE ward_loop;
+        END IF;
+
+        INSERT INTO tmp_ward_report
+        SELECT
+            v_ward_id,
+            v_ward_name,
+            COUNT(*),
+            SUM(CASE WHEN status = 'open'        THEN 1 ELSE 0 END),
+            SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END),
+            SUM(CASE WHEN status = 'resolved'    THEN 1 ELSE 0 END),
+            ROUND(AVG(
+                CASE WHEN status = 'resolved' AND resolved_at IS NOT NULL
+                     THEN DATEDIFF(resolved_at, filed_at)
+                END
+            ), 1),
+            SUM(CASE WHEN status <> 'resolved'
+                      AND DATEDIFF(NOW(), filed_at) > 7
+                     THEN 1 ELSE 0 END)
+        FROM COMPLAINT
+        WHERE ward_id = v_ward_id;
+    END LOOP;
+
+    -- Close the cursor
+    CLOSE ward_cursor;
+
+    -- Return the collected report
+    SELECT * FROM tmp_ward_report ORDER BY ward_id;
+
+    -- Cleanup
+    DROP TEMPORARY TABLE IF EXISTS tmp_ward_report;
+END$$
+
+DELIMITER ;
+
+-- ============================================================
 -- STORED PROCEDURE: GetWardSummary(IN p_ward_id INT)
 -- Returns total/open/in_progress/resolved counts for a ward.
 -- Called via API at GET /wards/{id}/summary
