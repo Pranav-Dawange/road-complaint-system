@@ -1,0 +1,11 @@
+citizen_id,ward_id,description,damage_type,severity,address,latitude,longitude
+1,1,Pothole causing accidents near railway crossing,pothole,critical,Station Road Shivajinagar Pune,18.5300,73.8450
+2,2,Road crack visible along divider for 100 meters,crack,medium,FC Road Camp Pune,18.5180,73.8700
+3,3,Waterlogging near hospital entrance blocking ambulance,waterlogging,critical,Sassoon Hospital Road Pune,18.5200,73.8600
+4,4,Subsidence on bridge approach road,subsidence,critical,Sangam Bridge Road Pune,18.5050,73.8300
+5,5,Shallow pothole causing tyre bursts,pothole,low,Karve Nagar Road Pune,18.4950,73.8100
+1,6,Crack in road surface near petrol pump,crack,medium,Paud Phata Road Pune,18.5090,73.8050
+2,7,Waterlogging in underpass during monsoon,waterlogging,critical,Chandani Chowk Underpas Pune,18.5450,73.7900
+3,8,Land subsidence swallowing footpath,subsidence,medium,Kondhwa Main Road Pune,18.4800,73.9000
+4,9,Large pothole spanning full lane width,pothole,critical,Solapur Road Pune,18.4600,73.9500
+5,10,Crack running across entire pedestrian crossing,crack,low,Kharadi Bypass Pune,18.5600,73.9450

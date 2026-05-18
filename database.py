@@ -89,3 +89,71 @@ def call_procedure(func_name: str, args: tuple = ()):
     placeholders = ", ".join(["%s"] * len(args))
     query = f"SELECT * FROM {func_name}({placeholders})"
     return execute_query(query, args, fetch=True)
+
+
+def execute_function(func_name: str, args: tuple = ()):
+    """
+    Call a PostgreSQL FUNCTION that returns a single scalar value.
+    Used for stored procedures like file_complaint_proc() that return an INT.
+
+    Args:
+        func_name : name of the PostgreSQL function
+        args      : tuple of IN arguments
+
+    Returns the scalar value (e.g. new complaint_id as int).
+    """
+    placeholders = ", ".join(["%s"] * len(args))
+    query = f"SELECT {func_name}({placeholders}) AS result"
+    conn   = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(query, args)
+        conn.commit()
+        row = cursor.fetchone()
+        return dict(row)["result"] if row else None
+    except DatabaseError as e:
+        conn.rollback()
+        raise RuntimeError(f"Function call error [{func_name}]: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def execute_in_transaction(statements: list[tuple]):
+    """
+    Execute multiple (query, params) pairs inside a single explicit
+    BEGIN / COMMIT transaction block. Rolls back on any error.
+
+    Args:
+        statements : list of (sql_string, params_tuple) pairs
+
+    Returns:
+        list of rowcounts for each statement executed.
+        If a statement has RETURNING, returns the first column value instead.
+
+    Usage:
+        results = execute_in_transaction([
+            ("INSERT INTO citizen (...) VALUES (%s,%s)", ("Alice","9876543210")),
+            ("INSERT INTO citizen (...) VALUES (%s,%s)", ("Bob",  "9123456789")),
+        ])
+    """
+    conn   = get_connection()
+    cursor = conn.cursor()
+    results = []
+    try:
+        for query, params in statements:
+            cursor.execute(query, params)
+            if cursor.description:
+                row = cursor.fetchone()
+                results.append(list(dict(row).values())[0] if row else None)
+            else:
+                results.append(cursor.rowcount)
+        conn.commit()
+        return results
+    except DatabaseError as e:
+        conn.rollback()
+        raise RuntimeError(f"Transaction rolled back: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+

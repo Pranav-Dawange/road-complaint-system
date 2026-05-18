@@ -70,11 +70,10 @@
     </button>
     <div class="collapse navbar-collapse" id="navMenu">
       <ul class="navbar-nav ms-auto align-items-center gap-1">
-        <li class="nav-item"><a class="nav-link-custom" href="index.html"><i class="bi bi-pencil-square"></i>File Complaint</a></li>
         <li class="nav-item"><a class="nav-link-custom" href="dashboard.html"><i class="bi bi-speedometer2"></i>Dashboard</a></li>
         <li class="nav-item"><a class="nav-link-custom" href="analytics.html"><i class="bi bi-bar-chart-line"></i>Analytics</a></li>
         <li class="nav-item"><a class="nav-link-custom" href="map.html"><i class="bi bi-map"></i>Map</a></li>
-        <li class="nav-item"><a class="nav-link-custom active" href="admin.html"><i class="bi bi-shield-lock-fill"></i>Admin</a></li>
+        <li class="nav-item"><a class="nav-link-custom active" href="admin.html"><i class="bi bi-shield-lock-fill"></i>System Control Panel</a></li>
         <li class="nav-item ms-2" id="navUser"></li>
       </ul>
     </div>
@@ -118,6 +117,8 @@
     <div class="tab-pills">
       <div class="tab-pill active" onclick="switchTab('wards')"   id="tab-wards"><i class="bi bi-building me-1"></i>Wards</div>
       <div class="tab-pill"        onclick="switchTab('workers')" id="tab-workers"><i class="bi bi-people-fill me-1"></i>Workers</div>
+      <div class="tab-pill"        onclick="switchTab('auditlog')" id="tab-auditlog"><i class="bi bi-journal-check me-1"></i>Audit Log</div>
+      <div class="tab-pill"        onclick="switchTab('import')" id="tab-import"><i class="bi bi-file-earmark-arrow-up me-1"></i>Import Complaints</div>
     </div>
   </div>
 
@@ -240,6 +241,94 @@
     </div>
   </div>
 
+  <!-- ══ AUDIT LOG PANEL ═══════════════════════════════════════════════ -->
+  <div id="panel-auditlog" class="section-panel">
+    <div class="container-fluid px-4 mt-4 pb-5">
+      <div class="glass-card fade-up" style="border-left:4px solid rgba(245,158,11,.6);">
+        <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <h6 style="color:var(--text-primary);font-weight:700;margin:0;"><i class="bi bi-journal-check me-2" style="color:var(--warning);"></i>Admin Audit Log</h6>
+            <p style="color:var(--text-muted);font-size:.75rem;margin:4px 0 0;">Auto-populated by PostgreSQL triggers on ward &amp; worker creation</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="auditCount" class="st-badge badge-in_progress">0 entries</span>
+            <button class="btn-glass" style="padding:5px 12px;font-size:.8rem;" onclick="loadAuditLog()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="glass-table">
+            <thead><tr><th>#</th><th>Action</th><th>Entity</th><th>Name</th><th>Details</th><th>Timestamp</th></tr></thead>
+            <tbody id="auditBody"><tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted);">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ CSV IMPORT PANEL ══════════════════════════════════════════════ -->
+  <div id="panel-import" class="section-panel">
+    <div class="container-fluid px-4 mt-4">
+      <div class="glass-card p-4 fade-up" style="border-left:4px solid rgba(139,92,246,.6);">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <i class="bi bi-file-earmark-arrow-up" style="color:#8b5cf6;font-size:1.2rem;"></i>
+          <span class="admin-section-title">Bulk Import Complaints via CSV</span>
+        </div>
+        <p style="color:var(--text-muted);font-size:.84rem;margin-bottom:16px;">
+          Upload a <code style="color:var(--accent);">.csv</code> file to bulk-insert complaints.
+          Each row calls the <strong style="color:#8b5cf6;">file_complaint_proc()</strong> stored procedure.<br>
+          All rows are wrapped in a <strong style="color:#8b5cf6;">single transaction</strong> — if any row fails, ALL are rolled back.
+        </p>
+
+        <!-- CSV format hint -->
+        <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.78rem;">
+          <div style="color:var(--text-muted);font-weight:600;margin-bottom:6px;"><i class="bi bi-info-circle me-1"></i>Expected CSV format:</div>
+          <code style="color:var(--accent);">citizen_id,ward_id,description,damage_type,severity,address,latitude,longitude<br>
+1,3,Large pothole near signal,pothole,critical,FC Road Pune,18.5204,73.8567<br>
+2,5,Waterlogging on main road,waterlogging,medium,MG Road Pune,,</code>
+          <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;">
+            <div><span style="color:var(--text-muted);font-size:.74rem;">damage_type:</span> <code style="color:var(--success);font-size:.73rem;">pothole &middot; crack &middot; waterlogging &middot; subsidence</code></div>
+            <div><span style="color:var(--text-muted);font-size:.74rem;">severity:</span> <code style="color:var(--success);font-size:.73rem;">low · medium · critical</code></div>
+          </div>
+        </div>
+
+        <!-- Upload zone -->
+        <div id="csvZone" onclick="document.getElementById('csvFile').click()"
+          style="background:rgba(139,92,246,.06);border:2px dashed rgba(139,92,246,.35);border-radius:14px;padding:2rem 1rem;
+                 text-align:center;cursor:pointer;transition:border-color .2s,background .2s;">
+          <i class="bi bi-cloud-upload-fill" style="font-size:2rem;color:#8b5cf6;display:block;margin-bottom:8px;"></i>
+          <p style="color:var(--text-primary);font-weight:500;margin:0 0 4px;">Click or drag CSV file here</p>
+          <p style="font-size:.78rem;color:var(--text-muted);margin:0;">Only .csv files accepted</p>
+          <input type="file" id="csvFile" accept=".csv" style="display:none;" onchange="onCsvSelected(this)" />
+        </div>
+        <div id="csvFileName" style="color:var(--accent);font-size:.82rem;margin-top:8px;display:none;"></div>
+
+        <div id="importFormErr" class="d-none mt-3" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:10px 14px;color:var(--danger);font-size:.83rem;"></div>
+
+        <div class="mt-4">
+          <button class="btn-grad" id="btnImport" onclick="bulkImport()" style="padding:9px 24px;background:linear-gradient(135deg,#7c3aed,#8b5cf6);" disabled>
+            <i class="bi bi-upload me-1"></i>Import Citizens
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import results -->
+    <div class="container-fluid px-4 mt-4 pb-5" id="importResultsSection" style="display:none;">
+      <div class="glass-card fade-up">
+        <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:12px;">
+          <h6 style="color:var(--text-primary);font-weight:700;margin:0;"><i class="bi bi-clipboard2-check me-2" style="color:#8b5cf6;"></i>Import Results</h6>
+          <span id="importSummary" class="st-badge badge-in_progress"></span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="glass-table">
+            <thead><tr><th>Row</th><th>Complaint ID</th><th>Citizen ID</th><th>Ward ID</th><th>Damage Type</th><th>Severity</th><th>Address</th><th>Status</th></tr></thead>
+            <tbody id="importResultsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /mainContent -->
 </div><!-- /page-content -->
 
@@ -270,12 +359,13 @@ function showToast(msg, type='success') {
   setTimeout(() => bar.classList.remove('show'), 3500);
 }
 
-/* ── Tab switch ─────────────────────────────────────────────── */
+/* ── Tab switch ──────────────────────────────────────────────────── */
 function switchTab(name) {
-  ['wards','workers'].forEach(t => {
+  ['wards','workers','auditlog','import'].forEach(t => {
     document.getElementById(`tab-${t}`).classList.toggle('active', t === name);
     document.getElementById(`panel-${t}`).classList.toggle('active', t === name);
   });
+  if (name === 'auditlog') loadAuditLog();
 }
 
 /* ── Login ──────────────────────────────────────────────────── */
@@ -319,7 +409,7 @@ function init() {
   loadData();
 }
 
-/* ── Load wards + workers ───────────────────────────────────── */
+/* ── Load wards + workers ───────────────────────────────────────────── */
 async function loadData() {
   await Promise.all([loadWards(), loadWorkers()]);
 }
@@ -446,6 +536,123 @@ async function addWorker() {
     showToast(e.message, 'error');
   } finally {
     btn.innerHTML = '<i class="bi bi-person-plus me-1"></i>Create Worker'; btn.disabled = false;
+  }
+}
+
+/* ── Audit Log ─────────────────────────────────────────────────────── */
+async function loadAuditLog() {
+  try {
+    const res  = await fetch(`${API}/admin/audit-log?limit=100`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to load audit log');
+    const data = await res.json();
+    document.getElementById('auditCount').textContent = `${data.length} entries`;
+    const tbody = document.getElementById('auditBody');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-muted);">No audit entries yet. Create a ward or worker to see entries.</td></tr>';
+      return;
+    }
+    const actionColor = a => a === 'WARD_CREATED' ? 'var(--accent)' : 'var(--success)';
+    const actionIcon  = a => a === 'WARD_CREATED' ? 'bi-building' : 'bi-person-badge-fill';
+    tbody.innerHTML = data.map((r, i) => {
+      const details = r.details ? Object.entries(r.details)
+        .filter(([,v]) => v !== null && v !== undefined)
+        .map(([k,v]) => `<span style="color:var(--text-muted);font-size:.73rem;">${k}: <strong style="color:var(--text-primary);">${v}</strong></span>`)
+        .join(' &nbsp;·&nbsp; ') : '—';
+      return `<tr style="animation:fadeUp .3s ease ${i*.04}s both;">
+        <td style="color:var(--text-muted);">#${r.log_id}</td>
+        <td><span style="background:rgba(6,182,212,.12);border:1px solid rgba(6,182,212,.25);border-radius:6px;padding:2px 8px;font-size:.75rem;font-weight:700;color:${actionColor(r.action)};">
+          <i class="bi ${actionIcon(r.action)} me-1"></i>${r.action}</span></td>
+        <td style="font-size:.82rem;color:var(--text-muted);text-transform:capitalize;">${r.entity_type}</td>
+        <td style="font-weight:600;color:var(--text-primary);">${r.entity_name || '—'}</td>
+        <td style="font-size:.78rem;">${details}</td>
+        <td style="font-size:.78rem;color:var(--text-muted);white-space:nowrap;">${r.created_at ? new Date(r.created_at).toLocaleString('en-IN') : '—'}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('auditBody').innerHTML =
+      `<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--danger);">${e.message}</td></tr>`;
+  }
+}
+
+/* ── CSV Import ────────────────────────────────────────────────────── */
+function onCsvSelected(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const nameEl = document.getElementById('csvFileName');
+  nameEl.textContent = `✔ Selected: ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+  nameEl.style.display = 'block';
+  document.getElementById('btnImport').disabled = false;
+  document.getElementById('importFormErr').classList.add('d-none');
+  document.getElementById('importResultsSection').style.display = 'none';
+}
+
+async function bulkImport() {
+  const fileInput = document.getElementById('csvFile');
+  const errEl     = document.getElementById('importFormErr');
+  errEl.classList.add('d-none');
+
+  if (!fileInput.files[0]) {
+    errEl.textContent = 'Please select a CSV file first.';
+    errEl.classList.remove('d-none');
+    return;
+  }
+
+  const btn = document.getElementById('btnImport');
+  btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;margin-right:6px;"></span>Importing…';
+  btn.disabled = true;
+
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+
+  try {
+    const res  = await fetch(`${API}/complaints/bulk-import`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Import failed');
+
+    showToast(`✅ Inserted: ${data.inserted} complaint(s)`, 'success');
+
+    document.getElementById('importSummary').textContent =
+      `${data.inserted} inserted · ${data.errors.length} errors`;
+
+    const sevColor = s => s==='critical'?'var(--danger)':s==='medium'?'var(--warning)':'var(--success)';
+    const tbody = document.getElementById('importResultsBody');
+    const rows  = [];
+    (data.rows || []).forEach(r => rows.push(
+      `<tr style="animation:fadeUp .3s ease both;">
+        <td style="color:var(--text-muted);">${r.row}</td>
+        <td style="color:var(--accent);font-weight:700;">#${r.complaint_id}</td>
+        <td style="color:var(--text-muted);">${r.citizen_id}</td>
+        <td style="color:var(--text-muted);">${r.ward_id}</td>
+        <td><span class="st-badge badge-in_progress" style="text-transform:capitalize;">${r.damage_type}</span></td>
+        <td><span style="color:${sevColor(r.severity)};font-weight:700;text-transform:capitalize;">${r.severity}</span></td>
+        <td style="font-size:.8rem;color:var(--text-muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.address}</td>
+        <td><span class="badge-available">Inserted</span></td>
+      </tr>`
+    ));
+    (data.errors || []).forEach(r => rows.push(
+      `<tr>
+        <td>${r.row}</td><td colspan="6" style="color:var(--danger);font-size:.82rem;">${r.reason}</td>
+        <td><span class="badge-unavailable">Error</span></td>
+      </tr>`
+    ));
+    tbody.innerHTML = rows.join('') || '<tr><td colspan="8" style="text-align:center;padding:1rem;color:var(--text-muted);">No rows processed.</td></tr>';
+    document.getElementById('importResultsSection').style.display = 'block';
+
+    fileInput.value = '';
+    document.getElementById('csvFileName').style.display = 'none';
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('d-none');
+    showToast(e.message, 'error');
+  } finally {
+    btn.innerHTML = '<i class="bi bi-upload me-1"></i>Import Complaints';
+    btn.disabled = false;
   }
 }
 

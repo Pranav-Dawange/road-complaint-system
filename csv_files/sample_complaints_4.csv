@@ -1,0 +1,11 @@
+citizen_id,ward_id,description,damage_type,severity,address,latitude,longitude
+1,3,Massive pothole near school bus stop,pothole,critical,Bibwewadi Road Pune,18.4750,73.8600
+2,4,Deep crack along road edge causing bikes to topple,crack,critical,Katraj Road Pune,18.4550,73.8650
+3,5,Severe waterlogging blocking 3 residential lanes,waterlogging,critical,Dhayari Road Pune,18.4600,73.8050
+4,6,Subsidence forming hollow under road surface,subsidence,critical,Warje Road Pune,18.4850,73.8000
+5,7,Multiple potholes after road digging for cable work,pothole,medium,Bavdhan Road Pune,18.5250,73.7750
+1,8,Crack expanding every monsoon season,crack,medium,Pashan Road Pune,18.5500,73.8000
+2,9,Waterlogging causing road to disappear in monsoon,waterlogging,critical,Sus Road Pune,18.5650,73.7700
+3,10,Road subsidence near drainage channel,subsidence,medium,Pirangut Road Pune,18.5050,73.7300
+4,1,Pothole filled with mud invisible to drivers,pothole,critical,Dapodi Road Pune,18.5950,73.8450
+5,2,Hair crack network across road surface,crack,low,Bhosari Road Pimpri,18.6200,73.8550

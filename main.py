@@ -30,7 +30,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 
-from database import execute_query, call_procedure
+from database import execute_query, call_procedure, execute_function, execute_in_transaction
 from models import (
     CitizenCreate, StatusUpdate, WorkerAssign,
     UserRegister, ComplaintStatus,
@@ -124,6 +124,27 @@ def _dt(row: dict, *keys):
         if row.get(k):
             row[k] = str(row[k])
     return row
+
+def log_admin_action(action: str, entity_type: str, entity_id: int,
+                     entity_name: str = None, details: dict = None):
+    """
+    Write a row to admin_audit_log from Python code.
+    Complements the PostgreSQL triggers (which cover ward/worker creation).
+    Used for: complaint status changes, bulk imports, etc.
+    """
+    import json
+    try:
+        execute_query(
+            """
+            INSERT INTO admin_audit_log
+                (action, entity_type, entity_id, entity_name, details)
+            VALUES (%s, %s, %s, %s, %s::jsonb)
+            """,
+            (action, entity_type, entity_id, entity_name,
+             json.dumps(details) if details else None)
+        )
+    except Exception as e:
+        print(f"[AUDIT LOG] Failed to log action '{action}': {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -373,17 +394,17 @@ def file_complaint(
                 f.write(content)
             photo_path = f"uploads/{filename}"   # relative to /static/
 
-    new_id = execute_query(
-        """
-        INSERT INTO complaint
+    # ── Call stored procedure file_complaint_proc() ──────────────────────────
+    # This PostgreSQL function handles validation + INSERT atomically.
+    # Defined in new_features.sql and called via SELECT file_complaint_proc(...).
+    try:
+        new_id = execute_function(
+            "file_complaint_proc",
             (citizen_id, ward_id, description, damage_type, severity,
-             status, address, latitude, longitude, photo_path)
-        VALUES (%s, %s, %s, %s, %s, 'open', %s, %s, %s, %s)
-        RETURNING complaint_id
-        """,
-        (citizen_id, ward_id, description, damage_type, severity,
-         address, latitude, longitude, photo_path)
-    )
+             address, latitude, longitude, photo_path)
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     # ── Send confirmation email to the citizen in background ──────────────────
     if background_tasks:
@@ -578,6 +599,20 @@ def update_complaint_status(
             old_st,
             new_st,
         )
+
+    # ── Write to admin_audit_log (Python-level, complements DB triggers) ─────
+    log_admin_action(
+        action      = "COMPLAINT_STATUS_CHANGED",
+        entity_type = "complaint",
+        entity_id   = complaint_id,
+        entity_name = f"Complaint #{complaint_id}",
+        details     = {
+            "old_status": old_st,
+            "new_status": new_st,
+            "changed_by": body.changed_by,
+            "citizen":    current.get("citizen_name")
+        }
+    )
 
     return {"message": f"Status updated to '{new_st}'", "complaint_id": complaint_id}
 
@@ -1135,3 +1170,189 @@ def get_complaint_resources(complaint_id: int):
     )
     for r in rows: _dt(r, "logged_at")
     return rows
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ADMIN AUDIT LOG — New Feature 1
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/admin/audit-log", tags=["Admin"])
+def get_admin_audit_log(
+    limit: int = 50,
+    current_user: dict = Depends(require_role(["admin"]))
+):
+    """
+    Fetch the admin audit log — all ward and worker creation events.
+    Populated automatically by PostgreSQL triggers (trg_log_ward_creation,
+    trg_log_worker_creation) defined in new_features.sql.
+    Admin only.
+    """
+    rows = execute_query(
+        """
+        SELECT log_id, action, entity_type, entity_id, entity_name,
+               details, created_at
+        FROM   admin_audit_log
+        ORDER  BY created_at DESC
+        LIMIT  %s
+        """,
+        (limit,), fetch=True
+    )
+    for r in rows:
+        _dt(r, "created_at")
+    return rows
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BULK COMPLAINT IMPORT — New Feature 3
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/complaints/bulk-import", tags=["Complaints"])
+async def bulk_import_complaints(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_role(["admin"]))
+):
+    """
+    Bulk import road complaints from a CSV file — all rows in ONE transaction.
+
+    Expected CSV columns (with header row):
+        citizen_id, ward_id, description, damage_type, severity, address,
+        latitude (optional), longitude (optional)
+
+    Valid damage_type values : pothole, flooding, broken_road, streetlight, sewage, other
+    Valid severity values     : low, medium, critical
+
+    Each row calls the PostgreSQL stored function file_complaint_proc().
+    All rows are wrapped in a single BEGIN/COMMIT transaction via
+    execute_in_transaction() — if any row fails, ALL are rolled back.
+
+    Returns: { inserted, skipped, errors, rows }
+    Admin only.
+    """
+    import csv, io
+
+    VALID_DAMAGE  = {"pothole", "crack", "waterlogging", "subsidence"}
+    VALID_SEV     = {"low", "medium", "critical"}
+
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=422, detail="Only .csv files are accepted.")
+
+    content = await file.read()
+    text    = content.decode("utf-8", errors="replace")
+    reader  = csv.DictReader(io.StringIO(text))
+
+    required_cols = {"citizen_id", "ward_id", "description", "damage_type", "severity", "address"}
+    if not reader.fieldnames or not required_cols.issubset(
+        {c.strip().lower() for c in reader.fieldnames}
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"CSV must have columns: {', '.join(sorted(required_cols))}"
+        )
+
+    statements = []
+    row_info   = []
+    errors     = []
+
+    for i, row in enumerate(reader, start=2):  # row 1 = header
+        try:
+            citizen_id  = int((row.get("citizen_id")  or "").strip())
+            ward_id     = int((row.get("ward_id")     or "").strip())
+        except ValueError:
+            errors.append({"row": i, "reason": "citizen_id and ward_id must be integers", "data": dict(row)})
+            continue
+
+        description = (row.get("description") or "").strip()
+        damage_type = (row.get("damage_type") or "").strip().lower()
+        severity    = (row.get("severity")    or "").strip().lower()
+        address     = (row.get("address")     or "").strip()
+
+        # Validate required fields
+        if not description:
+            errors.append({"row": i, "reason": "description is required", "data": dict(row)}); continue
+        if damage_type not in VALID_DAMAGE:
+            errors.append({"row": i, "reason": f"Invalid damage_type '{damage_type}'. Valid: {VALID_DAMAGE}", "data": dict(row)}); continue
+        if severity not in VALID_SEV:
+            errors.append({"row": i, "reason": f"Invalid severity '{severity}'. Valid: {VALID_SEV}", "data": dict(row)}); continue
+        if not address:
+            errors.append({"row": i, "reason": "address is required", "data": dict(row)}); continue
+
+        # ── Pre-validate citizen_id and ward_id exist before touching transaction ──
+        citizen_exists = execute_query(
+            "SELECT 1 FROM citizen WHERE citizen_id = %s", (citizen_id,), fetch=True
+        )
+        if not citizen_exists:
+            errors.append({"row": i, "reason": f"citizen_id {citizen_id} does not exist in DB", "data": dict(row)})
+            continue
+
+        ward_exists = execute_query(
+            "SELECT 1 FROM ward WHERE ward_id = %s", (ward_id,), fetch=True
+        )
+        if not ward_exists:
+            errors.append({"row": i, "reason": f"ward_id {ward_id} does not exist in DB", "data": dict(row)})
+            continue
+
+        # Optional GPS
+        try:
+            lat = float(row.get("latitude") or 0) or None
+            lng = float(row.get("longitude") or 0) or None
+        except ValueError:
+            lat = lng = None
+
+        # Call stored procedure file_complaint_proc() via SELECT
+        statements.append((
+            "SELECT file_complaint_proc(%s,%s,%s,%s,%s,%s,%s,%s,NULL) AS complaint_id",
+            (citizen_id, ward_id, description, damage_type, severity, address, lat, lng)
+        ))
+        row_info.append({
+            "row": i, "citizen_id": citizen_id, "ward_id": ward_id,
+            "damage_type": damage_type, "severity": severity, "address": address
+        })
+
+    if not statements:
+        return {
+            "inserted": 0, "errors": errors,
+            "message": "No valid complaint rows to insert."
+        }
+
+    # ── Single BEGIN/COMMIT transaction for ALL complaint inserts ─────────────
+    try:
+        new_ids = execute_in_transaction(statements)
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Transaction rolled back — 0 complaints inserted. Reason: {e}"
+        )
+
+    inserted_rows = [
+        {
+            "complaint_id": cid,
+            "row":          info["row"],
+            "citizen_id":   info["citizen_id"],
+            "ward_id":      info["ward_id"],
+            "damage_type":  info["damage_type"],
+            "severity":     info["severity"],
+            "address":      info["address"],
+        }
+        for cid, info in zip(new_ids, row_info)
+    ]
+
+    # ── Write bulk import summary to audit log ────────────────────────────────
+    log_admin_action(
+        action      = "COMPLAINTS_BULK_IMPORTED",
+        entity_type = "complaint",
+        entity_id   = 0,
+        entity_name = "Bulk CSV Import",
+        details     = {
+            "file":         file.filename,
+            "inserted":     len(inserted_rows),
+            "errors":       len(errors),
+            "imported_by":  current_user.get("username", "admin")
+        }
+    )
+
+    return {
+        "inserted": len(inserted_rows),
+        "errors":   errors,
+        "rows":     inserted_rows,
+        "message":  f"Successfully inserted {len(inserted_rows)} complaint(s) in a single transaction."
+    }

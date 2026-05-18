@@ -1,0 +1,11 @@
+citizen_id,ward_id,description,damage_type,severity,address,latitude,longitude
+1,5,Critical pothole causing vehicle suspension damage,pothole,critical,Pune Satara Road,18.4400,73.8600
+2,6,Major crack appearing after recent heavy trucks,crack,critical,NH 48 Service Road Pune,18.4300,73.8700
+3,7,Waterlogging blocking entire road for 3 days,waterlogging,critical,Undri Road Pune,18.4700,73.9100
+4,8,Ground subsidence forming sinkhole near lake,subsidence,critical,Pisoli Road Pune,18.4500,73.9300
+5,9,Cluster of potholes making road undriveable,pothole,critical,Handewadi Road Pune,18.4550,73.9500
+1,10,Longitudinal crack threatening road stability,crack,medium,Uruli Kanchan Road Pune,18.4200,73.9800
+2,1,Flash waterlogging blocking expressway access,waterlogging,critical,Pune Expressway Service Road,18.5850,73.7400
+3,2,Subsidence near old bridge causing structural concern,subsidence,critical,Kirkee Bridge Road Pune,18.5850,73.8350
+4,3,Pothole cluster in industrial zone truck route,pothole,medium,Talwade Road Pimpri,18.6400,73.7800
+5,4,Road surface crack due to tree root growth,crack,low,Model Colony Road Pune,18.5350,73.8350

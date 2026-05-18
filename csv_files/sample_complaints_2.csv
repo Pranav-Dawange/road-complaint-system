@@ -1,0 +1,11 @@
+citizen_id,ward_id,description,damage_type,severity,address,latitude,longitude
+1,2,Pothole near market causing vehicle damage,pothole,critical,Deccan Gymkhana Road Pune,18.5162,73.8397
+2,3,Crack spreading across road surface near junction,crack,medium,JM Road Pune,18.5196,73.8394
+3,4,Severe waterlogging on main road after rain,waterlogging,critical,Senapati Bapat Road Pune,18.5282,73.8437
+4,5,Road subsidence posing danger to two-wheelers,subsidence,medium,Nagar Road Pune,18.5474,73.8850
+5,6,Waterlogging near residential colony entrance,waterlogging,critical,Aundh Road Pune,18.5590,73.8130
+1,7,Large pothole after utility pipeline digging,pothole,critical,Paud Road Kothrud Pune,18.5035,73.8002
+2,8,Road crack causing tire punctures daily,crack,medium,Sinhagad Road Pune,18.4574,73.8048
+3,9,Pothole near school gate dangerous for children,pothole,medium,Magarpatta City Road Pune,18.5123,73.9270
+4,10,Subsidence sinking road surface near flyover,subsidence,critical,Hinjewadi Phase 2 Pune,18.5895,73.7201
+5,1,Severe waterlogging creating health hazard,waterlogging,critical,Hadapsar Industrial Area Pune,18.4953,73.9295
