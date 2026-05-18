@@ -10,17 +10,19 @@
 ```
 road-complaint-system/
 │
-├── main.py                # FastAPI app — 30+ REST endpoints (Auth, Complaints, Analytics, Admin, PDF, etc.)
+├── main.py                # FastAPI app — 33+ REST endpoints (Auth, Complaints, Analytics, Admin, PDF, etc.)
 ├── auth.py                # JWT authentication & role-based access control (RBAC)
-├── database.py            # PostgreSQL connection helper using psycopg2 (RealDictCursor)
-├── models.py              # Pydantic request/response models & enum definitions (incl. WardCreate, WorkerCreate)
+├── database.py            # PostgreSQL connection helper — execute_query, execute_function, execute_in_transaction
+├── models.py              # Pydantic request/response models & enum definitions
 ├── notifications.py       # Email notification system (Gmail SMTP) with PDF attachments
 ├── pdf_report.py          # PDF generator using ReportLab — complaint receipts + analytics dashboard PDF
 │
-├── supabase_schema.sql    # PostgreSQL schema: 11 tables, 3 triggers, cursor function, view, indexes, seed data
+├── supabase_schema.sql    # PostgreSQL schema: 11 tables, 3 triggers, cursor function, view, indexes
+├── new_features.sql       # 🆕 DBMS enhancements: audit table, 2 triggers, stored proc, helper function
 ├── schema.sql             # Original MySQL schema (for reference)
 ├── seed_data.sql          # Standalone seed data (complaints, citizens, wards, officers, workers)
 │
+├── csv_files/             # 🆕 Sample CSVs for bulk complaint import testing (5 files × 10 records)
 ├── requirements.txt       # Python dependencies (pinned versions)
 ├── .env.example           # Template for environment variables
 ├── .gitignore             # Git ignore rules (.env, venv, __pycache__, etc.)
@@ -32,9 +34,9 @@ road-complaint-system/
 └── templates/
     ├── index.html         # Citizen portal — login, register, file complaints, download PDF
     ├── dashboard.html     # Officer dashboard — manage complaints, auto-assign workers, resources
-    ├── analytics.html     # Analytics dashboard — charts, ward report, SLA breaches, PDF download (admin)
+    ├── analytics.html     # Analytics dashboard — charts, ward report, SLA breaches, PDF download
     ├── map.html           # Interactive Leaflet.js map with complaint markers
-    └── admin.html         # 🆕 Admin panel — manage wards & workers, live tables
+    └── admin.html         # 🆕 Admin panel — Wards, Workers, Audit Log, Import Complaints tabs
 ```
 
 ---
@@ -90,21 +92,24 @@ road-complaint-system/
 - Officers can broadcast ward/city-level announcements
 - Citizens see active advisories on the complaint portal
 
-### 🆕 Admin Panel (`/admin`)
+### 🆕 Admin Panel — System Control Panel (`/admin`)
 - **Admin-only** access — login wall for non-admin users
-- **Add New Ward** — form with ward name, city, optional officer assignment; `INSERT INTO ward` SQL
-- **Add New Worker** — form with name, phone, skill type, ward assignment, GPS base location; `INSERT INTO worker` SQL
-- **Live Ward Table** — real-time list of all wards with officer assignments
-- **Live Worker Table** — real-time list of all workers with availability status and GPS coordinates
-- Toast notifications on success/error
-- Tab-based interface (Wards / Workers)
-- Admin nav link appears automatically in all pages when logged in as admin
+- **Wards tab** — add/view wards with officer assignments
+- **Workers tab** — add/view workers with skill, availability, GPS
+- **Audit Log tab** — real-time view of all admin actions (ward/worker creation via DB triggers, status changes, bulk imports via Python)
+- **Import Complaints tab** — bulk CSV upload with drag-and-drop; calls `file_complaint_proc()` per row inside a single `BEGIN/COMMIT` transaction
+- Toast notifications on success/error; tab-pill navigation
+- Admin nav link appears automatically across all pages when logged in as admin
 
-### ⚡ Database Automation (Triggers & Cursor)
-- **Trigger 1:** `trg_complaint_status_log` — auto-logs status changes to audit trail
+### ⚡ Database Automation (Triggers, Stored Procedures & Cursor)
+- **Trigger 1:** `trg_complaint_status_log` — auto-logs status changes to `complaint_log`
 - **Trigger 2:** `trg_auto_notify_on_status_change` — auto-creates notification records
 - **Trigger 3:** `trg_set_resolved_timestamp` — auto-manages `resolved_at` timestamps
-- **Cursor Function:** `generate_all_wards_report()` — explicit cursor iterating over all wards for aggregated statistics
+- **🆕 Trigger 4:** `trg_log_ward_creation` — auto-logs ward creation to `admin_audit_log`
+- **🆕 Trigger 5:** `trg_log_worker_creation` — auto-logs worker creation to `admin_audit_log`
+- **🆕 Stored Procedure:** `file_complaint_proc()` — atomic complaint insertion with validation
+- **Cursor Function:** `generate_all_wards_report()` — explicit cursor iterating over all wards
+- **🆕 Audit Log:** `admin_audit_log` table tracks all admin actions (ward/worker creation, status changes, bulk imports)
 
 ---
 
@@ -150,7 +155,10 @@ Create a Supabase project (or local PostgreSQL instance), then run the schema:
 \i supabase_schema.sql
 ```
 
-This creates all 11 tables, 3 triggers, cursor function, view, indexes, and seed data.
+This creates all 11 tables, 3 triggers, cursor function, view, and indexes.
+
+> **🆕 Also run `new_features.sql`** in Supabase SQL Editor after the schema:
+> This adds the `admin_audit_log` table, 2 audit triggers, `file_complaint_proc()` stored procedure, and `citizen_phone_exists()` helper function.
 
 ---
 
@@ -209,7 +217,7 @@ Server is live at **`http://localhost:8000`**
 
 ## 🗄️ Database Design
 
-### Tables (11)
+### Tables (12)
 
 | Table | Purpose |
 |-------|---------|
@@ -224,6 +232,7 @@ Server is live at **`http://localhost:8000`**
 | `resource_usage` | Material expenditure logs per complaint |
 | `notification` | Email notification audit trail |
 | `public_advisory` | Ward/city-level announcements |
+| `admin_audit_log` | 🆕 Admin action audit log (ward/worker creation, status changes, bulk imports) |
 
 ### Advanced PostgreSQL Features
 
@@ -232,11 +241,16 @@ Server is live at **`http://localhost:8000`**
 | **Trigger 1** | `trg_complaint_status_log` → auto-logs status changes to `complaint_log` |
 | **Trigger 2** | `trg_auto_notify_on_status_change` → auto-creates notification records on status change |
 | **Trigger 3** | `trg_set_resolved_timestamp` → auto-manages `resolved_at` (BEFORE UPDATE) |
+| **🆕 Trigger 4** | `trg_log_ward_creation` → auto-logs ward creation to `admin_audit_log` (AFTER INSERT on ward) |
+| **🆕 Trigger 5** | `trg_log_worker_creation` → auto-logs worker creation to `admin_audit_log` (AFTER INSERT on worker) |
 | **Cursor Function** | `generate_all_wards_report()` → explicit CURSOR iterating row-by-row over all wards |
+| **🆕 Stored Procedure** | `file_complaint_proc()` → atomic complaint insertion with citizen/ward validation |
 | **Stored Function** | `get_ward_summary(ward_id)` → real-time complaint counts per ward |
+| **🆕 Helper Function** | `citizen_phone_exists(phone)` → phone duplicate check for bulk operations |
 | **View** | `active_complaints_view` → non-resolved complaints with citizen + ward joins |
-| **Indexes** | Composite + partial indexes on `complaint(ward_id, status, filed_at)` |
+| **Indexes** | Composite + partial indexes on `complaint(ward_id, status, filed_at)` + audit log indexes |
 | **ENUMs** | `damage_type_enum`, `severity_enum`, `complaint_status_enum`, `user_role_enum`, `skill_type_enum` |
+| **JSONB** | `admin_audit_log.details` stores structured metadata per action |
 
 ---
 
@@ -300,13 +314,15 @@ Server is live at **`http://localhost:8000`**
 | `GET` | `/analytics/all-wards-report` | Cursor-based comprehensive ward report | Officer / Admin |
 | `🆕 GET` | `/analytics/report` | Download full Analytics Dashboard PDF | **Admin only** |
 
-### Citizens & Advisories
+### Citizens, Advisories & 🆕 Bulk Import
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | `POST` | `/citizens` | Register a new citizen | Public |
 | `GET` | `/citizens/{id}` | Get citizen profile | Any logged-in |
 | `POST` | `/advisories` | Post a public advisory | Officer / Admin |
 | `GET` | `/advisories` | List active advisories | Public |
+| `🆕 POST` | `/complaints/bulk-import` | Bulk import complaints from CSV (calls stored proc per row, single transaction) | **Admin only** |
+| `🆕 GET` | `/admin/audit-log` | View admin audit log (ward/worker triggers + Python-logged actions) | **Admin only** |
 
 ---
 
@@ -337,16 +353,22 @@ Server is live at **`http://localhost:8000`**
 
 ---
 
-## 🆕 Changelog — Latest Update
+## 🆕 Changelog — Latest Update (DBMS Enhancements)
 
 ### Added
-- **Admin Panel** (`/admin`) — dedicated page for ward and worker management
-- **POST /wards** — admin creates new wards with SQL `INSERT INTO ward`
-- **POST /workers** — admin creates new workers with SQL `INSERT INTO worker`
-- **Analytics PDF Export** (`GET /analytics/report`) — admin-only download of full analytics report
-- **Citizen ID in complaint PDF** — complaint receipt now includes citizen ID for reference
-- **Admin nav link** — automatically shown in navbar across all pages when logged in as admin
-- **Pinned dependency versions** in `requirements.txt`
+- **`new_features.sql`** — run in Supabase to activate all DBMS features below
+- **`admin_audit_log` table** — tracks all admin actions with JSONB details
+- **Trigger: `trg_log_ward_creation`** — auto-fires on `INSERT INTO ward`, logs to audit table
+- **Trigger: `trg_log_worker_creation`** — auto-fires on `INSERT INTO worker`, logs to audit table
+- **Stored Procedure: `file_complaint_proc()`** — atomic complaint insertion with citizen/ward validation
+- **`POST /complaints/bulk-import`** — upload CSV, pre-validates each row, calls stored proc per row, wraps all in `BEGIN/COMMIT`
+- **`GET /admin/audit-log`** — returns all audit log entries (triggers + Python-logged)
+- **`log_admin_action()` Python helper** — logs `COMPLAINT_STATUS_CHANGED` and `COMPLAINTS_BULK_IMPORTED` to audit table
+- **Admin Panel — Audit Log tab** — real-time table of all admin actions with JSONB details
+- **Admin Panel — Import Complaints tab** — drag-and-drop CSV upload with results table
+- **5 sample CSV files** in `csv_files/` for bulk import testing
+- **Pre-validation** of `citizen_id` / `ward_id` before transaction (invalid rows → error list, valid rows → atomic insert)
+- Renamed Admin nav link to **"System Control Panel"**; removed File Complaint from admin navbar
 
 ---
 
