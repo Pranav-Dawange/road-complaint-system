@@ -107,3 +107,22 @@ class PublicAdvisoryCreate(BaseModel):
     title:      str
     message:    str
     valid_days: int = 7
+
+
+# ── Admin panel models ────────────────────────────────────────────────────────
+
+class WardCreate(BaseModel):
+    """Body for POST /wards — admin creates a new ward."""
+    ward_name:  str
+    city:       str = "Pune"
+    officer_id: Optional[int] = None
+
+
+class WorkerCreate(BaseModel):
+    """Body for POST /workers — admin creates a new worker."""
+    name:           str
+    phone:          str
+    skill_type:     SkillType
+    ward_id:        Optional[int] = None
+    base_latitude:  Optional[float] = None
+    base_longitude: Optional[float] = None

@@ -1,10 +1,55 @@
-fastapi
-uvicorn[standard]
-psycopg2-binary
-pydantic
-python-jose[cryptography]
-passlib[bcrypt]
-python-multipart
-python-dotenv
-pymongo[srv]
-reportlab
+# ── Core Framework ────────────────────────────────────────────────────────────
+fastapi==0.136.1
+uvicorn[standard]==0.46.0
+starlette==1.0.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+psycopg2-binary==2.9.12        # PostgreSQL driver (Supabase)
+pymongo==4.17.0                # MongoDB driver (GridFS photo storage)
+
+# ── Authentication ────────────────────────────────────────────────────────────
+python-jose[cryptography]==3.5.0   # JWT token handling
+passlib[bcrypt]==1.7.4             # Password hashing
+bcrypt==4.2.1
+
+# ── Validation & Serialization ────────────────────────────────────────────────
+pydantic==2.13.3
+pydantic-core==2.46.3
+annotated-types==0.7.0
+
+# ── File Uploads & Forms ──────────────────────────────────────────────────────
+python-multipart==0.0.26
+pillow==12.2.0                 # Image handling
+
+# ── PDF Generation ────────────────────────────────────────────────────────────
+reportlab==4.4.10
+
+# ── Environment & Config ──────────────────────────────────────────────────────
+python-dotenv==1.2.2
+
+# ── Networking & Async ───────────────────────────────────────────────────────
+anyio==4.13.0
+httptools==0.7.1
+uvloop==0.22.1
+watchfiles==1.1.1
+websockets==16.0
+h11==0.16.0
+
+# ── Cryptography (jose deps) ──────────────────────────────────────────────────
+cryptography==46.0.7
+ecdsa==0.19.2
+pyasn1==0.6.3
+rsa==4.9.1
+cffi==2.0.0
+pycparser==3.0
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+dnspython==2.8.0
+click==8.3.3
+six==1.17.0
+charset-normalizer==3.4.7
+idna==3.13
+typing_extensions==4.15.0
+typing-inspection==0.4.2
+PyYAML==6.0.3
+annotated-doc==0.0.4

@@ -17,14 +17,16 @@ from typing import Optional
 
 from pymongo import MongoClient
 import gridfs
+import gridfs.errors
 from bson.objectid import ObjectId
+from dotenv import load_dotenv
 
 from fastapi import (
     FastAPI, HTTPException, Query, Depends, BackgroundTasks,
     Form, File, UploadFile, status
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 
@@ -32,7 +34,8 @@ from database import execute_query, call_procedure
 from models import (
     CitizenCreate, StatusUpdate, WorkerAssign,
     UserRegister, ComplaintStatus,
-    ComplaintFeedbackSubmit, ResourceUsageSubmit, PublicAdvisoryCreate
+    ComplaintFeedbackSubmit, ResourceUsageSubmit, PublicAdvisoryCreate,
+    WardCreate, WorkerCreate
 )
 from auth import (
     hash_password, verify_password,
@@ -67,7 +70,6 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 MAX_PHOTO_BYTES    = 5 * 1024 * 1024  # 5 MB
 
 # ── MongoDB Setup ──────────────────────────────────────────────────────────────
-from dotenv import load_dotenv
 load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI")
 if MONGO_URI:
@@ -181,6 +183,11 @@ def serve_analytics():
 @app.get("/map", response_class=HTMLResponse, tags=["Pages"])
 def serve_map():
     with open(os.path.join(TEMPLATES_DIR, "map.html"), encoding="utf-8") as f:
+        return f.read()
+
+@app.get("/admin", response_class=HTMLResponse, tags=["Pages"])
+def serve_admin():
+    with open(os.path.join(TEMPLATES_DIR, "admin.html"), encoding="utf-8") as f:
         return f.read()
 
 @app.get("/{page}.html", response_class=HTMLResponse, tags=["Pages"], include_in_schema=False)
@@ -696,6 +703,27 @@ def list_wards():
     )
 
 
+@app.post("/wards", status_code=201, tags=["Wards"])
+def create_ward(
+    body: WardCreate,
+    current_user: dict = Depends(require_role(["admin"])),
+):
+    """
+    Admin creates a new ward.
+    SQL: INSERT INTO ward (ward_name, city, officer_id) RETURNING ward_id
+    Protected: admin only.
+    """
+    new_id = execute_query(
+        """
+        INSERT INTO ward (ward_name, city, officer_id)
+        VALUES (%s, %s, %s)
+        RETURNING ward_id
+        """,
+        (body.ward_name, body.city, body.officer_id)
+    )
+    return {"ward_id": new_id, "message": f"Ward '{body.ward_name}' created successfully."}
+
+
 @app.get("/wards/{ward_id}/summary", tags=["Wards"])
 def ward_summary(
     ward_id: int,
@@ -744,6 +772,30 @@ def list_workers():
         """,
         fetch=True
     )
+
+
+@app.post("/workers", status_code=201, tags=["Workers"])
+def create_worker(
+    body: WorkerCreate,
+    current_user: dict = Depends(require_role(["admin"])),
+):
+    """
+    Admin creates a new worker.
+    SQL: INSERT INTO worker (...) RETURNING worker_id
+    Protected: admin only.
+    """
+    if body.ward_id and not execute_query("SELECT 1 FROM ward WHERE ward_id=%s", (body.ward_id,), fetch=True):
+        _not_found("Ward", body.ward_id)
+
+    new_id = execute_query(
+        """
+        INSERT INTO worker (name, phone, skill_type, ward_id, is_available, base_latitude, base_longitude)
+        VALUES (%s, %s, %s, %s, TRUE, %s, %s)
+        RETURNING worker_id
+        """,
+        (body.name, body.phone, body.skill_type, body.ward_id, body.base_latitude, body.base_longitude)
+    )
+    return {"worker_id": new_id, "message": f"Worker '{body.name}' created successfully."}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -933,6 +985,27 @@ def download_complaint_report(complaint_id: int):
     filename = f"complaint_report_{complaint_id}.pdf"
     return StreamingResponse(
         buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/analytics/report", tags=["Reports"])
+def download_analytics_report(
+    current_user: dict = Depends(require_role(["admin"])),
+):
+    """
+    Generate and stream a full analytics summary as a styled PDF.
+    Includes: ward summary, monthly trend, damage breakdown,
+              resolution rates, and SLA breach list.
+    Protected: admin only.
+    """
+    from pdf_report import generate_analytics_pdf
+
+    pdf_bytes = generate_analytics_pdf()
+    filename = f"analytics_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

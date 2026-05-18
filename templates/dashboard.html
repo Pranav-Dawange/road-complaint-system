@@ -183,6 +183,7 @@
         <li class="nav-item"><a class="nav-link-custom active" href="dashboard.html"><i class="bi bi-speedometer2"></i>Dashboard</a></li>
         <li class="nav-item"><a class="nav-link-custom" href="analytics.html"><i class="bi bi-bar-chart-line"></i>Analytics</a></li>
         <li class="nav-item"><a class="nav-link-custom" href="map.html"><i class="bi bi-map"></i>Map</a></li>
+        <li class="nav-item" id="adminNavItem" style="display:none;"><a class="nav-link-custom" href="admin.html"><i class="bi bi-shield-lock-fill"></i>Admin</a></li>
         <li class="nav-item ms-2" id="navUser"></li>
       </ul>
     </div>
@@ -655,6 +656,7 @@ function init() {
       document.getElementById('postAdvBtn').style.display = 'none';
       document.getElementById('dashTitle').innerText = 'Citizen Dashboard';
     }
+    if (user.role === 'admin') document.getElementById('adminNavItem').style.display = '';
   }
   loadComplaints();
 }
